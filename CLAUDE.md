@@ -376,6 +376,7 @@ groups:
 - `docs/security-alerting.md` - Value-aware severity reference
 - `docs/imperative-mode.md` - GET/POST/PUT operations, output formatting
 - `docs/authentication.md` - Credentials, token storage, multi-product
+- `docs/gitops-for-backup-infrastructure.md` - Conceptual case for GitOps (the "why")
 - `docs/gitops-workflows.md` - GitHub Actions, Azure DevOps, GitLab CI
 - `docs/azure-devops-integration.md` - CI/CD integration guide
 - `docs/troubleshooting.md` - Common issues and fixes

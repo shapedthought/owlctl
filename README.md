@@ -126,6 +126,7 @@ export OWLCTL_URL="vbr.example.com"
 | [Drift Detection](docs/drift-detection.md) | Severity classification, filtering, exit codes |
 | [Security Alerting](docs/security-alerting.md) | Value-aware severity reference, cross-resource validation |
 | [Imperative Mode](docs/imperative-mode.md) | GET/POST/PUT API operations, output formatting |
+| [Why GitOps](docs/gitops-for-backup-infrastructure.md) | The conceptual case for managing backup infrastructure as code |
 | [GitOps Workflows](docs/gitops-workflows.md) | GitHub Actions, Azure DevOps, GitLab CI integration |
 | [Azure DevOps Integration](docs/azure-devops-integration.md) | Pipeline templates, scheduled scans, PR validation |
 | [Authentication](docs/authentication.md) | Credentials, token storage, multi-product switching |

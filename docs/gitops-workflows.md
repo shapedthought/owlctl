@@ -1757,13 +1757,14 @@ jobs:
 
 ## See Also
 
+- [Why GitOps for Backup Infrastructure](gitops-for-backup-infrastructure.md) - The conceptual case for this approach
 - [Getting Started Guide](getting-started.md) - Basic owlctl setup
 - [Declarative Mode Guide](declarative-mode.md) - Declarative commands reference
 - [Azure DevOps Integration](azure-devops-integration.md) - Detailed Azure DevOps guide
 - [Drift Detection Guide](drift-detection.md) - Comprehensive drift detection
 - [Security Alerting](security-alerting.md) - Severity classification reference
 - [State Management](state-management.md) - State file deep dive
-- [Pipeline Examples](../examples/pipelines/) - Ready-to-use pipeline templates
+- [Pipeline Examples](../examples/pipelines/) - Ready-to-use Azure DevOps pipeline templates
 
 ---
 
