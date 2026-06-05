@@ -341,14 +341,15 @@ func BuildSobrGuidance(resourceName, origin string) RemediationGuidance {
 	}
 }
 
-// BuildJobGuidance creates guidance for job diff
-func BuildJobGuidance(resourceName, origin string) RemediationGuidance {
+// BuildJobGuidance creates guidance for job diff. Job export is keyed by ID
+// (the `owlctl job export` subcommand takes a job ID, not a name).
+func BuildJobGuidance(resourceName, resourceID, origin string) RemediationGuidance {
 	return RemediationGuidance{
 		Origin:       origin,
 		ResourceType: "job",
 		ResourceName: resourceName,
 		ApplyCmd:     fmt.Sprintf("owlctl job apply jobs/%s.yaml", sanitizeFileName(resourceName)),
-		ExportCmd:    fmt.Sprintf("owlctl export \"%s\" -o jobs/%s.yaml", resourceName, sanitizeFileName(resourceName)),
+		ExportCmd:    fmt.Sprintf("owlctl job export %s -o jobs/%s.yaml", resourceID, sanitizeFileName(resourceName)),
 		ManageCmd:    fmt.Sprintf("owlctl job apply jobs/%s.yaml", sanitizeFileName(resourceName)),
 	}
 }

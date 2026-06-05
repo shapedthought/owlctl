@@ -618,8 +618,9 @@ owlctl repo diff --all
 
 When starting declarative management, snapshot existing resources to seed state (origin: `observed`), then export and apply the ones you want to manage:
 ```bash
-# Capture all existing resources into state (monitor-only baseline)
-owlctl snapshot --all
+# Capture existing resources into state (monitor-only baseline)
+owlctl snapshot --all          # repos, SOBRs, encryption, KMS, config backup
+owlctl job snapshot --all      # jobs are excluded from the global snapshot
 
 # Commit initial state
 git add state.json

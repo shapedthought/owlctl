@@ -666,7 +666,14 @@ variables:
 .owlctl-setup: &owlctl-setup
   before_script:
     - apt-get update && apt-get install -y curl
-    - curl -sL https://github.com/shapedthought/owlctl/releases/${OWLCTL_VERSION}/download/owlctl-linux-amd64.tar.gz -o owlctl.tar.gz
+    # 'latest' and pinned tags use different GitHub release URL forms
+    - |
+      if [ "$OWLCTL_VERSION" = "latest" ]; then
+        DL="https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz"
+      else
+        DL="https://github.com/shapedthought/owlctl/releases/download/${OWLCTL_VERSION}/owlctl-linux-amd64.tar.gz"
+      fi
+    - curl -sL "$DL" -o owlctl.tar.gz
     - tar xzf owlctl.tar.gz
     - chmod +x owlctl
     - ./owlctl profile --set vbr

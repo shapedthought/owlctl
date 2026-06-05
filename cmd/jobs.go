@@ -455,7 +455,7 @@ func diffSingleJob(jobName string) {
 	}
 
 	// Show guidance based on origin
-	printRemediationGuidance(BuildJobGuidance(jobName, resource.Origin))
+	printRemediationGuidance(BuildJobGuidance(jobName, resource.ID, resource.Origin))
 
 	os.Exit(exitCodeForDrifts(drifts))
 }
