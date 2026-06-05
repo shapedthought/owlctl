@@ -358,5 +358,5 @@ This is expected. For human-readable output: `owlctl profile --list --table`
 ## Getting Help
 
 - **Documentation:** [GitHub Repository](https://github.com/shapedthought/owlctl)
-- **User Guide:** [user_guide.md](../user_guide.md)
+- **Getting Started:** [getting-started.md](getting-started.md)
 - **Issues:** [GitHub Issues](https://github.com/shapedthought/owlctl/issues)

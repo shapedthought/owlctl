@@ -1,6 +1,6 @@
 # Command Quick Reference
 
-Fast reference for common owlctl commands. See full documentation in [User Guide](../user_guide.md) and [Drift Detection Guide](drift-detection.md).
+Fast reference for common owlctl commands. See full documentation in the [Getting Started Guide](getting-started.md) and [Drift Detection Guide](drift-detection.md).
 
 ## Table of Contents
 
@@ -722,7 +722,7 @@ owlctl init
 ## See Also
 
 - [Getting Started Guide](getting-started.md) - Complete setup walkthrough
-- [User Guide](../user_guide.md) - Full imperative mode documentation
+- [Imperative Mode Guide](imperative-mode.md) - Full imperative mode documentation
 - [Drift Detection Guide](drift-detection.md) - Complete drift detection reference
 - [Security Alerting](security-alerting.md) - Severity classification details
 - [Azure DevOps Integration](azure-devops-integration.md) - CI/CD pipeline examples

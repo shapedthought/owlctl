@@ -438,12 +438,13 @@ See [Declarative Mode Guide](declarative-mode.md#groups) for the full groups ref
 ### Imperative Mode Users
 
 - Read the [Imperative Mode Guide](imperative-mode.md) for detailed command reference
-- Learn about [API profiles](../user_guide.md#profiles) for multi-product management
-- Explore [output formatting](../user_guide.md#using-with-nushell) with jq and Nushell
+- Learn about [API profiles](authentication.md#profiles) for multi-product management
+- Explore [output formatting](imperative-mode.md#using-with-nushell) with jq and Nushell
 
 ### Declarative Mode Users
 
-- **Start here:** [State Management Guide](state-management.md) - How state works, instance scoping, and bootstrapping drift detection
+- **Start here:** [Tutorial](tutorial.md) - Walk the core loop end to end: export a job, edit it, apply, detect drift
+- [State Management Guide](state-management.md) - How state works, instance scoping, and bootstrapping drift detection
 - [GitOps Workflows Guide](gitops-workflows.md) - Comprehensive CI/CD integration
 - [Drift Detection](drift-detection.md) - Severity classification and filtering
 - [Security Alerting](security-alerting.md) - Value-aware severity reference

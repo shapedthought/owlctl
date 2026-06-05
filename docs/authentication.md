@@ -168,7 +168,7 @@ Example structure:
 
 ### API Versions
 
-Current default versions (as of October 2023):
+Default API versions owlctl ships with (override per profile in `profiles.json`):
 
 | Product | Version | API Version |
 |---------|---------|-------------|
@@ -655,4 +655,4 @@ fi
 
 - [Getting Started Guide](getting-started.md) - Complete setup walkthrough
 - [Command Reference](command-reference.md) - Quick command reference
-- [User Guide](../user_guide.md) - Full user documentation
+- [Tutorial](tutorial.md) - Manage a backup job as code, end to end
