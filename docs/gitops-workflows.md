@@ -1757,6 +1757,7 @@ jobs:
 
 ## See Also
 
+- [Why GitOps for Backup Infrastructure](gitops-for-backup-infrastructure.md) - The conceptual case for this approach
 - [Getting Started Guide](getting-started.md) - Basic owlctl setup
 - [Declarative Mode Guide](declarative-mode.md) - Declarative commands reference
 - [Azure DevOps Integration](azure-devops-integration.md) - Detailed Azure DevOps guide

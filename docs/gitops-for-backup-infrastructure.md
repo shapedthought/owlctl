@@ -1,4 +1,6 @@
-# GitOps for Backup Infrastructure: Using Veeam APIs with Azure DevOps
+# Why GitOps for Backup Infrastructure
+
+> **This is the conceptual guide** — the case for managing Veeam backup infrastructure as code and how owlctl fits the wider infrastructure-as-code ecosystem. For hands-on setup, see the [GitOps Workflows Guide](gitops-workflows.md) (GitHub Actions, Azure DevOps, GitLab CI) and the [Azure DevOps Integration Guide](azure-devops-integration.md). Ready-to-use pipelines live in [`examples/pipelines/`](../examples/pipelines/).
 
 ## Executive Summary
 
