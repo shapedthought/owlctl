@@ -16,4 +16,4 @@ owlctl
 settings.json
 profiles.json
 .env
-docs/internal/
+headers.json
