@@ -468,6 +468,5 @@ owlctl follows [Semantic Versioning](https://semver.org/):
 ## See Also
 
 - [GitHub Releases](https://github.com/shapedthought/owlctl/releases) - Binary downloads and release notes
-- [User Guide](user_guide.md) - Complete documentation
 - [Getting Started](docs/getting-started.md) - Setup guide
 - [Documentation](docs/) - All guides and references

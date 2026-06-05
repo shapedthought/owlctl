@@ -368,6 +368,7 @@ groups:
 
 **Documentation:**
 - `docs/getting-started.md` - Installation, setup, first commands (start here)
+- `docs/tutorial.md` - Core declarative loop walkthrough (export → edit → apply → diff)
 - `docs/declarative-mode.md` - Full declarative mode guide (instances, groups, exports)
 - `docs/state-management.md` - State file mechanics, instance scoping, drift detection setup
 - `docs/command-reference.md` - Quick command reference
