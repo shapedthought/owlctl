@@ -7,6 +7,7 @@ Fast reference for common owlctl commands. See full documentation in [User Guide
 - [Setup & Authentication](#setup--authentication)
 - [Imperative Commands (All Products)](#imperative-commands-all-products)
 - [Declarative Commands (VBR Only)](#declarative-commands-vbr-only)
+- [State Commands](#state-commands)
 - [Group Commands](#group-commands)
 - [Context Commands](#context-commands)
 - [Instance Commands](#instance-commands)
@@ -277,6 +278,29 @@ owlctl job plan base.yaml
 owlctl job plan base.yaml --overlay prod.yaml
 owlctl job plan base.yaml --overlay prod.yaml --show-yaml
 ```
+
+---
+
+## State Commands
+
+Inspect the tracked resources recorded in `state.json` (resources are scoped per instance — see [State Management](state-management.md)).
+
+```bash
+# List all tracked resources (Instance, Name, Type, Origin, LastApplied)
+owlctl state list
+owlctl state list --instance vbr-prod      # filter to one instance
+
+# Show full detail and spec for one resource
+owlctl state show "Database Backup"
+
+# Show the audit trail (snapshotted / created / applied) for a resource
+owlctl state history "Database Backup"
+
+# Print the resolved state.json path
+owlctl state path
+```
+
+`origin` is `applied` (written by `apply`) or `observed` (written by `snapshot`).
 
 ---
 

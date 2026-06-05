@@ -362,7 +362,7 @@ func diffAllRepos() {
 		fmt.Printf("  - %d repositories drifted — remediate with: owlctl repo apply <spec>.yaml\n", driftedApplied)
 	}
 	if driftedObserved > 0 {
-		fmt.Printf("  - %d repositories drifted (observed) — adopt to enable remediation\n", driftedObserved)
+		fmt.Printf("  - %d repositories drifted (observed, monitor-only) — export then apply a spec to enable remediation\n", driftedObserved)
 	}
 
 	totalDrifted := driftedApplied + driftedObserved
@@ -812,7 +812,7 @@ func diffAllSobrs() {
 		fmt.Printf("  - %d scale-out repositories drifted — remediate with: owlctl repo sobr-apply <spec>.yaml\n", driftedApplied)
 	}
 	if driftedObserved > 0 {
-		fmt.Printf("  - %d scale-out repositories drifted (observed) — adopt to enable remediation\n", driftedObserved)
+		fmt.Printf("  - %d scale-out repositories drifted (observed, monitor-only) — export then apply a spec to enable remediation\n", driftedObserved)
 	}
 
 	totalDrifted := driftedApplied + driftedObserved

@@ -426,7 +426,7 @@ func diffAllEncryptionPasswords() {
 		fmt.Printf("  - %d passwords drifted — manual remediation required in VBR console\n", driftedApplied)
 	}
 	if driftedObserved > 0 {
-		fmt.Printf("  - %d passwords drifted (observed) — adopt to enable tracking\n", driftedObserved)
+		fmt.Printf("  - %d passwords drifted (observed) — read-only; remediate manually in the VBR console\n", driftedObserved)
 	}
 	// Also count inventory changes (added/removed) which were counted earlier
 	inventoryChanges := driftedCount - driftedApplied - driftedObserved
@@ -878,7 +878,7 @@ func diffAllKmsServers() {
 		fmt.Printf("  - %d KMS servers drifted — remediate with: owlctl encryption kms-apply <spec>.yaml\n", driftedApplied)
 	}
 	if driftedObserved > 0 {
-		fmt.Printf("  - %d KMS servers drifted (observed) — adopt to enable remediation\n", driftedObserved)
+		fmt.Printf("  - %d KMS servers drifted (observed, monitor-only) — export then apply a spec to enable remediation\n", driftedObserved)
 	}
 	// Also count inventory changes (added/removed) which were counted earlier
 	inventoryChanges := driftedCount - driftedApplied - driftedObserved

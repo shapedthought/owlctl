@@ -25,7 +25,7 @@ owlctl maintains state in `state.json` to enable drift detection and track decla
 State management enables:
 - **Drift detection** - Compare live VBR configuration against desired state
 - **Change tracking** - Know when configurations were last captured
-- **Origin tracking** - Distinguish between applied, adopted, and exported resources
+- **Origin tracking** - Distinguish between applied and observed resources
 - **GitOps workflows** - Version control your infrastructure state
 
 ## What is State?
@@ -33,9 +33,8 @@ State management enables:
 State is owlctl's record of the last known configuration for each managed resource. When you snapshot or apply a resource, owlctl saves its configuration to `state.json`. Later, the diff command compares the current VBR configuration against this saved state to detect drift.
 
 **Key concepts:**
-- **Snapshot** - Captures current VBR configuration and saves to state
-- **Apply** - Updates VBR and automatically snapshots the new configuration
-- **Adopt** - Takes a snapshot without making changes (for existing resources)
+- **Snapshot** - Captures current VBR configuration and saves to state (origin: `observed`)
+- **Apply** - Updates VBR and automatically snapshots the new configuration (origin: `applied`)
 - **Drift** - Differences between state and current VBR configuration
 
 ## State File Location
@@ -223,29 +222,23 @@ owlctl encryption kms-snapshot "Azure Key Vault"
 owlctl encryption kms-snapshot --all
 ```
 
-### Adopt Commands
+### Bringing Existing Resources Under Management
 
-Adopt takes a snapshot of an existing resource to bring it under declarative management without making any changes. This is useful when you want to start managing existing resources declaratively.
+To start tracking a resource that already exists in VBR, capture it into state, then choose how to manage it:
+
+- **Monitor only** — `snapshot` records the current configuration with `origin: observed`. Drift is detected, but owlctl never modifies the resource.
+- **Manage declaratively** — `export` the resource to YAML, commit it, then `apply` it. Apply writes `origin: applied`, enabling remediation by re-applying the spec.
 
 ```bash
-# Adopt repository
-owlctl repo adopt "Default Backup Repository"
-owlctl repo adopt --all
+# Monitor an existing repository (observe only)
+owlctl repo snapshot "Default Backup Repository"
 
-# Adopt SOBR
-owlctl repo sobr-adopt "SOBR-Production"
-owlctl repo sobr-adopt --all
-
-# Adopt KMS server
-owlctl encryption kms-adopt "Azure Key Vault"
-owlctl encryption kms-adopt --all
+# ...or bring it under declarative management
+owlctl repo export "Default Backup Repository" -o repos/default.yaml
+owlctl repo apply repos/default.yaml
 ```
 
-**Adopt vs Snapshot:**
-- Both capture current configuration and save to state
-- Adopt marks `origin: "adopted"` in state
-- Snapshot marks `origin: "snapshot"` in state
-- Functionally identical, but origin tracking helps understand how resources were added
+> **Encryption passwords** are read-only in the VBR API — they can only be snapshotted (`observed`), never applied.
 
 ### Apply Commands
 
@@ -265,7 +258,7 @@ owlctl repo sobr-apply sobr.yaml
 owlctl encryption kms-apply kms.yaml
 ```
 
-**Note:** Jobs are only snapshotted via apply. There is no manual job snapshot command.
+**Note:** Apply snapshots automatically on success. Jobs can also be snapshotted directly with `owlctl job snapshot` (jobs are excluded from the global `snapshot --all`).
 
 ## State Origins
 
@@ -273,20 +266,17 @@ The `origin` field in state tracks how a resource entered declarative management
 
 | Origin | Meaning | How Created |
 |--------|---------|-------------|
-| `applied` | Configuration was applied via YAML | `owlctl job apply`, `owlctl repo apply`, etc. |
-| `adopted` | Existing resource adopted into management | `owlctl repo adopt`, `owlctl repo sobr-adopt`, etc. |
-| `snapshot` | Manual snapshot taken | `owlctl repo snapshot`, `owlctl encryption snapshot`, etc. |
-| `exported` | Exported to YAML but not yet applied | `owlctl export`, `owlctl repo export`, etc. |
+| `applied` | Configuration was applied from YAML | `owlctl job apply`, `owlctl repo apply`, etc. |
+| `observed` | Captured by a snapshot (monitor-only) | `owlctl repo snapshot`, `owlctl encryption snapshot`, etc. |
 
-**Origin is informational only** - it doesn't affect drift detection or other operations. It helps you understand the history of each resource.
+**Origin is informational only** - it doesn't affect drift detection or other operations. It helps you understand how each resource entered state. (Re-applying an `observed` resource's exported spec promotes it to `applied`.)
 
 ## Updating State
 
 State is automatically updated when you:
 
-1. **Apply a configuration** - Updates state with new configuration
-2. **Take a snapshot** - Updates state with current VBR configuration
-3. **Adopt a resource** - Adds resource to state with current configuration
+1. **Apply a configuration** - Updates state with new configuration (origin: `applied`)
+2. **Take a snapshot** - Updates state with current VBR configuration (origin: `observed`)
 
 **Manual state updates:**
 To refresh state for all resources:
@@ -533,11 +523,8 @@ owlctl encryption kms-snapshot --all
 
 **Solution:**
 ```bash
-# Snapshot the resource first
+# Snapshot the resource first to record it in state
 owlctl repo snapshot "Resource Name"
-
-# Or adopt existing resource
-owlctl repo adopt "Resource Name"
 
 # Then diff will work
 owlctl repo diff "Resource Name"
@@ -627,18 +614,17 @@ owlctl repo snapshot --all
 owlctl repo diff --all
 ```
 
-### 4. Use Adopt for Existing Resources
+### 4. Snapshot Existing Resources First
 
-When starting declarative management, adopt existing resources:
+When starting declarative management, snapshot existing resources to seed state (origin: `observed`), then export and apply the ones you want to manage:
 ```bash
-# Adopt all existing resources
-owlctl repo adopt --all
-owlctl repo sobr-adopt --all
-owlctl encryption kms-adopt --all
+# Capture existing resources into state (monitor-only baseline)
+owlctl snapshot --all          # repos, SOBRs, encryption, KMS, config backup
+owlctl job snapshot --all      # jobs are excluded from the global snapshot
 
 # Commit initial state
 git add state.json
-git commit -m "Adopt existing VBR resources into declarative management"
+git commit -m "Capture existing VBR resources into declarative state"
 git push
 ```
 

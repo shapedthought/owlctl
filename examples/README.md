@@ -6,7 +6,7 @@ This directory contains example configurations for owlctl's declarative manageme
 
 ```
 examples/
-├── owlctl.yaml                  # Groups, targets — main config
+├── owlctl.yaml                  # Groups, instances — main config
 ├── profiles/
 │   ├── standard-db-backup.yaml  # kind: Profile — database defaults
 │   └── standard-file-backup.yaml  # kind: Profile — file server defaults
@@ -50,11 +50,15 @@ groups:
     specs:
       - specs/file-backup.yaml
 
-targets:
+instances:
   primary:
-    url: https://vbr-prod.example.com
+    product: vbr
+    url: vbr-prod.example.com    # hostname/IP only — no scheme, no port
+    credentialRef: PROD          # reads OWLCTL_PROD_USERNAME / OWLCTL_PROD_PASSWORD
   dr:
-    url: https://vbr-dr.example.com
+    product: vbr
+    url: vbr-dr.example.com
+    credentialRef: DR
 ```
 
 ### How It Works
@@ -112,11 +116,11 @@ owlctl group show db-tier
 owlctl job apply --group db-tier --dry-run
 owlctl job apply --group db-tier
 
-# Apply to a specific VBR target
-owlctl job apply --group db-tier --target primary
+# Apply to a specific VBR instance (overrides the group's pinned instance)
+owlctl --instance primary job apply --group db-tier
 
 # Drift check a group
-owlctl job diff --group db-tier --target primary
+owlctl --instance primary job diff --group db-tier
 ```
 
 ---

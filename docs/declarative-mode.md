@@ -121,7 +121,7 @@ Maps are merged recursively, arrays are replaced, and labels are combined across
 owlctl maintains state in `state.json` to track:
 - Last known configuration of each resource
 - When snapshots were taken
-- Configuration origin (applied vs adopted)
+- Configuration origin (applied vs observed)
 
 ### 8. Drift Detection
 Compare live VBR configuration against desired state to detect unauthorized changes with security-aware severity classification.
@@ -368,7 +368,7 @@ owlctl config-backup snapshot
           "name": "Default Backup Repository",
           "lastApplied": "2024-01-15T10:31:00Z",
           "lastAppliedBy": "administrator",
-          "origin": "snapshot",
+          "origin": "observed",
           "spec": { }
         }
       }
