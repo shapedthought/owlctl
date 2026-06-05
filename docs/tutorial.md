@@ -85,7 +85,7 @@ Apply does two things on success:
 
 That second part matters: **applying is what lets `diff` work later.** State is owlctl's record of what the configuration *should* be, and drift detection compares live VBR against it. A job you exported but never applied has no state baseline, so `diff` has nothing to compare against.
 
-> Commit `state.json` alongside your YAML so drift detection works the same for everyone on the team. See [State Management](state-management.md) for how state is structured.
+> By default owlctl writes state to `~/.owlctl/state.json` — run `owlctl state path` to confirm. To keep it under version control with your specs, set `OWLCTL_SETTINGS_PATH` to your project directory before running owlctl, then commit `state.json` so drift detection behaves the same for everyone on the team. See [State Management](state-management.md) for details.
 
 ## Step 5 — Detect drift
 

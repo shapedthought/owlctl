@@ -39,17 +39,17 @@ State is owlctl's record of the last known configuration for each managed resour
 
 ## State File Location
 
-By default, `state.json` is created in the current directory. Use `OWLCTL_SETTINGS_PATH` to set a custom location:
+By default, `state.json` is written to `~/.owlctl/state.json`. Run `owlctl state path` to print the exact location. To keep state under version control with your specs, set `OWLCTL_SETTINGS_PATH` to your project directory:
 
 ```bash
-# Set custom location
-export OWLCTL_SETTINGS_PATH="$HOME/.owlctl/"
+# Keep config + state with the project
+export OWLCTL_SETTINGS_PATH="$(pwd)/.owlctl/"
 
 # state.json will be created at:
-# $HOME/.owlctl/state.json
+# <project>/.owlctl/state.json
 ```
 
-**Important:** The state file must be in the same directory as `settings.json` and `profiles.json`.
+**Important:** `OWLCTL_SETTINGS_PATH` controls where `settings.json`, `profiles.json`, and `state.json` all live, keeping them together. (With the variable unset, `state.json` defaults to `~/.owlctl/` while the other files default to the current directory, so set it explicitly for predictable, committable state.)
 
 ## State File Format
 
