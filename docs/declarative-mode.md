@@ -292,167 +292,23 @@ fi
 
 ## State Management
 
-owlctl maintains state in `state.json` to track resource configurations and enable drift detection.
+owlctl records the configuration of each managed resource in `state.json`. Applying a resource snapshots it automatically (`origin: applied`); `snapshot` captures a resource for monitoring without changing it (`origin: observed`). Drift detection compares live VBR against this recorded state.
 
-### Snapshot Commands
+State is scoped per instance (state v4), so the same resource name can exist independently across instances without collision.
 
-Snapshot captures the current VBR configuration and saves it to state for drift detection.
-
-**Repositories:**
-```bash
-# Snapshot single repository
-owlctl repo snapshot "Default Backup Repository"
-
-# Snapshot all repositories
-owlctl repo snapshot --all
-```
-
-**SOBRs:**
-```bash
-# Snapshot single SOBR
-owlctl repo sobr-snapshot "SOBR-Production"
-
-# Snapshot all SOBRs
-owlctl repo sobr-snapshot --all
-```
-
-**Encryption Passwords:**
-```bash
-# Snapshot single encryption password
-owlctl encryption snapshot "Production Encryption Key"
-
-# Snapshot all encryption passwords
-owlctl encryption snapshot --all
-```
-
-**KMS Servers:**
-```bash
-# Snapshot single KMS server
-owlctl encryption kms-snapshot "Azure Key Vault"
-
-# Snapshot all KMS servers
-owlctl encryption kms-snapshot --all
-```
-
-**Configuration Backup (Singleton):**
-```bash
-# Snapshot configuration backup settings
-owlctl config-backup snapshot
-```
-
-**Note:** Jobs are snapshotted automatically when you apply them. Manual snapshots not needed for jobs. Configuration backup is a singleton — no name or `--all` required.
-
-### State File Format
-
-`state.json` stores resource states, scoped by instance. Resources from all instance connections are kept in separate namespaces:
-
-```json
-{
-  "version": 4,
-  "instances": {
-    "default": {
-      "product": "vbr",
-      "resources": {
-        "Database Backup": {
-          "type": "VBRJob",
-          "id": "57b3baab-6237-41bf-add7-db63d41d984c",
-          "name": "Database Backup",
-          "lastApplied": "2024-01-15T10:30:00Z",
-          "lastAppliedBy": "administrator",
-          "origin": "applied",
-          "spec": { }
-        },
-        "Default Backup Repository": {
-          "type": "VBRRepository",
-          "id": "a1b2c3d4-...",
-          "name": "Default Backup Repository",
-          "lastApplied": "2024-01-15T10:31:00Z",
-          "lastAppliedBy": "administrator",
-          "origin": "observed",
-          "spec": { }
-        }
-      }
-    },
-    "vbr-prod": {
-      "product": "vbr",
-      "resources": { }
-    }
-  }
-}
-```
-
-The `"default"` instance holds resources for commands run without `--instance`. Named instances (e.g., `"vbr-prod"`) are populated when commands run with `--instance vbr-prod`.
-
-See [State Management Guide](state-management.md) for the full state file reference and migration history.
+See the **[State Management Guide](state-management.md)** for the full reference: the `state.json` format, the complete snapshot command list, instance scoping, origins, and automatic migration. The [Command Reference](command-reference.md) lists every snapshot command.
 
 ## Drift Detection
 
-Detect configuration drift from desired state with security-aware severity classification.
-
-For full details see [Drift Detection Guide](drift-detection.md) and [Security Alerting](security-alerting.md).
-
-### Detect Drift
+`diff` compares the live VBR configuration against your recorded state and classifies each change by security impact — **CRITICAL** (exit `4`), **WARNING**/**INFO** (exit `3`), or no drift (exit `0`). Filter with `--severity <level>` or `--security-only`.
 
 ```bash
-# Single resource
-owlctl job diff "Database Backup"
+owlctl job diff --all --security-only       # security-relevant drift across all jobs
 owlctl repo diff "Default Backup Repository"
-owlctl repo sobr-diff "SOBR-Production"
-owlctl encryption diff "Production Encryption Key"
-owlctl encryption kms-diff "Azure Key Vault"
-
-# All resources of a type
-owlctl job diff --all
-owlctl repo diff --all
-owlctl repo sobr-diff --all
-owlctl encryption diff --all
-owlctl encryption kms-diff --all
-
-# Configuration Backup (singleton — no name or --all needed)
 owlctl config-backup diff
-owlctl config-backup diff --severity warning
-owlctl config-backup diff --security-only
-
-# Filter by severity
-owlctl job diff --all --severity critical    # Only CRITICAL
-owlctl job diff --all --severity warning     # WARNING and above
-owlctl repo diff --all --security-only       # WARNING and above (alias)
 ```
 
-### Severity Classification
-
-Drifts are classified by security impact:
-
-| Severity | Icon | Description | Exit Code |
-|----------|------|-------------|-----------|
-| **CRITICAL** | 🔴 | Security-impacting changes (encryption disabled, immutability off, GFS removed) | 4 |
-| **WARNING** | ⚠️ | Important changes (retention reduced, compression changed, schedule modified) | 3 |
-| **INFO** | ℹ️ | Minor changes (description, labels, non-security settings) | 3 |
-
-### Exit Codes
-
-Drift commands return specific exit codes:
-
-| Code | Meaning | Action |
-|------|---------|--------|
-| `0` | No drift | Continue |
-| `3` | Drift detected (INFO/WARNING) | Review and remediate if needed |
-| `4` | Critical drift detected | Immediate remediation required |
-| `1` | Error occurred | Check logs |
-
-**Example usage in monitoring:**
-```bash
-owlctl job diff --all --security-only
-EXIT_CODE=$?
-
-if [ $EXIT_CODE -eq 4 ]; then
-    echo "CRITICAL security drift detected!"
-    # Send alert, trigger remediation
-    exit 1
-elif [ $EXIT_CODE -eq 3 ]; then
-    echo "WARNING: Drift detected, review required"
-fi
-```
+See **[Drift Detection](drift-detection.md)** for the severity model and filtering, **[Security Alerting](security-alerting.md)** for value-aware severity rules, and the **[Command Reference](command-reference.md)** for every diff command and its exit codes.
 
 ## Configuration Overlays
 
