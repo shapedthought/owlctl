@@ -299,7 +299,7 @@ owlctl login
 Edit `settings.json`:
 ```json
 {
-  "skipTLSVerify": true
+  "apiNotSecure": true
 }
 ```
 
@@ -508,11 +508,8 @@ ls -la $OWLCTL_SETTINGS_PATH/state.json
 
 **Solution:**
 ```bash
-# Snapshot the resource first
+# Snapshot the resource first to record it in state
 owlctl repo snapshot "Resource Name"
-
-# Or adopt existing resource
-owlctl repo adopt "Resource Name"
 
 # Then diff will work
 owlctl repo diff "Resource Name"
@@ -849,7 +846,7 @@ $env:OWLCTL_URL
 **Solutions:**
 ```bash
 # Check for typos
-env | grep VCLI
+env | grep OWLCTL
 
 # Ensure no spaces around =
 export OWLCTL_USERNAME="admin"  # Correct
@@ -967,7 +964,7 @@ If you can't find a solution here:
 owlctl utils  # Select "Check Version"
 
 # Environment
-env | grep VCLI
+env | grep OWLCTL
 
 # Profile info
 owlctl profile --get

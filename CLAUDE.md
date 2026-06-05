@@ -101,6 +101,21 @@ owlctl supports declarative, infrastructure-as-code management for VBR resources
 | Scale-Out Repos | `repo sobr-export` | `repo sobr-apply` | `repo sobr-snapshot` | `repo sobr-diff` |
 | Encryption Passwords | `encryption export` | N/A (read-only) | `encryption snapshot` | `encryption diff` |
 | KMS Servers | `encryption kms-export` | `encryption kms-apply` | `encryption kms-snapshot` | `encryption kms-diff` |
+| Config Backup (singleton) | `config-backup export` | `config-backup apply` | `config-backup snapshot` | `config-backup diff` |
+
+**Global commands (operate across all resource types at once):**
+- `owlctl export --all [-d <dir>] [--all-instances] [--from-state]` - Export every resource type to a product/instance/type directory tree. `--from-state` generates YAML offline from `state.json` without contacting VBR.
+- `owlctl snapshot --all [--all-instances]` - Snapshot every resource type (except jobs, which are declarative-managed) into `state.json` in one operation.
+
+**State inspection commands:**
+- `owlctl state list [--instance <name>]` - Table of all tracked resources (Instance, Name, Type, Origin, LastApplied)
+- `owlctl state show <name>` - Full detail + spec for one resource
+- `owlctl state history <name>` - Audit trail of actions (snapshotted/created/applied) with changed fields
+- `owlctl state path` - Print the `state.json` path
+
+**Context commands (kubectl-style aliases over `instance`):**
+- `owlctl context list` / `current` - List instances / show active context
+- `owlctl context use <name>` - Set active context; `owlctl context use -` clears it
 
 #### Commands
 
@@ -159,7 +174,7 @@ All diff commands support:
           "name": "Resource Name",
           "lastApplied": "2026-02-01T14:30:00Z",
           "lastAppliedBy": "username",
-          "origin": "applied|snapshot",
+          "origin": "applied|observed",
           "spec": { }
         }
       }
@@ -177,7 +192,8 @@ Resources are scoped under `instances["<instance-name>"]`. When no `--instance` 
 
 **State Operations:**
 - State is automatically updated on successful `apply` (origin: "applied")
-- State is explicitly updated on `snapshot` commands (origin: "snapshot")
+- State is explicitly updated on `snapshot` commands (origin: "observed")
+- Each resource also carries a `history` audit trail (added in v3); inspect with `owlctl state history <name>`
 - Drift detection compares state spec vs live VBR configuration
 - State is NOT for audit compliance (use Git history + CI/CD logs + VBR audit logs)
 
@@ -330,8 +346,13 @@ groups:
 - `cmd/encryption.go` - Encryption password and KMS server management
 - `cmd/severity_config.go` - Custom severity configuration
 - `cmd/instance.go` - Instance add/remove/set/get/unset/list/show commands
+- `cmd/context.go` - kubectl-style `context list/use/current` (aliases over instance state)
 - `cmd/group_resource.go` - Group apply/diff with instance activation + specsDir helpers
 - `cmd/group.go` - Group list/show commands
+- `cmd/global_export.go` / `cmd/global_snapshot.go` - `export --all` / `snapshot --all` across all resource types
+- `cmd/state.go` - `state list/show/history/path` inspection commands
+- `cmd/configbackup.go` - VBR config-backup singleton resource (snapshot/diff/export/apply)
+- `cmd/export_registry.go` / `cmd/vbr_exports.go` - Resource-type registry driving global export/snapshot
 
 **Configuration:**
 - `config/owlctl_config.go` - VCLIConfig, InstanceConfig, GroupConfig, config loading

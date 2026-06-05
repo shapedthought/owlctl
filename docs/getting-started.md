@@ -466,10 +466,10 @@ See [Declarative Mode Guide](declarative-mode.md#groups) for the full groups ref
 
 **Option 1: Skip verification (NOT recommended for production)**
 
-Set in `settings.json`:
+Pass `--insecure` on any command, or set in `settings.json`:
 ```json
 {
-  "skipTLSVerify": true
+  "apiNotSecure": true
 }
 ```
 

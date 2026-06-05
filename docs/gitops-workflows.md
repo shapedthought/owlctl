@@ -204,15 +204,15 @@ Thumbs.db
 
 ```json
 {
-  "skipTLSVerify": false
+  "apiNotSecure": false
 }
 ```
 
 **Commit this** - Controls owlctl behavior, contains no secrets.
 
 **Environment-specific settings:**
-- Production: `"skipTLSVerify": false` (require valid certificates)
-- Development: `"skipTLSVerify": true` (allow self-signed certs)
+- Production: `"apiNotSecure": false` (require valid certificates)
+- Development: `"apiNotSecure": true` (allow self-signed certs)
 
 ### Credentials Management
 
@@ -660,13 +660,13 @@ stages:
   - verify
 
 variables:
-  VCLI_VERSION: "latest"
+  OWLCTL_VERSION: "latest"
   OWLCTL_SETTINGS_PATH: "./.owlctl/"
 
 .owlctl-setup: &owlctl-setup
   before_script:
     - apt-get update && apt-get install -y curl
-    - curl -sL https://github.com/shapedthought/owlctl/releases/${VCLI_VERSION}/download/owlctl-linux-amd64.tar.gz -o owlctl.tar.gz
+    - curl -sL https://github.com/shapedthought/owlctl/releases/${OWLCTL_VERSION}/download/owlctl-linux-amd64.tar.gz -o owlctl.tar.gz
     - tar xzf owlctl.tar.gz
     - chmod +x owlctl
     - ./owlctl profile --set vbr
@@ -939,7 +939,7 @@ spec:
   credentials:
     tenantId: "${AZURE_TENANT_ID}"
     clientId: "${AZURE_CLIENT_ID}"
-    # clientSecret: provided via VCLI_KMS_SECRET env var
+    # clientSecret: provided via OWLCTL_KMS_SECRET env var
 ```
 
 ### 7. Drift Detection as Security Control

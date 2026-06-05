@@ -496,7 +496,7 @@ echo $OWLCTL_URL
 Edit `settings.json`:
 ```json
 {
-  "skipTLSVerify": true
+  "apiNotSecure": true
 }
 ```
 
