@@ -102,7 +102,18 @@ func exportSingleJob(jobID string, profile models.Profile) {
 }
 
 func exportAllJobs(profile models.Profile) {
-	// Fetch all jobs using generic list response
+	outputDir := exportDirectory
+	if outputDir == "" {
+		outputDir = "."
+	}
+	if err := exportAllJobsToDir(outputDir, profile); err != nil {
+		log.Fatalf("Export failed: %v", err)
+	}
+}
+
+// exportAllJobsToDir exports all VBR jobs to the specified directory.
+// Registry-compatible: used by the global export command.
+func exportAllJobsToDir(outDir string, profile models.Profile) error {
 	type JobListItem struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
@@ -115,18 +126,11 @@ func exportAllJobs(profile models.Profile) {
 
 	if len(jobs.Data) == 0 {
 		fmt.Println("No jobs found")
-		return
+		return nil
 	}
 
-	// Determine output directory
-	outputDir := exportDirectory
-	if outputDir == "" {
-		outputDir = "."
-	}
-
-	// Create directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		log.Fatalf("Failed to create directory: %v", err)
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	successCount := 0
@@ -135,24 +139,20 @@ func exportAllJobs(profile models.Profile) {
 	fmt.Printf("Exporting %d jobs...\n", len(jobs.Data))
 
 	for i, job := range jobs.Data {
-		// Fetch full job details as raw JSON
 		endpoint := fmt.Sprintf("jobs/%s", job.ID)
 		rawData := vhttp.GetData[json.RawMessage](endpoint, profile)
 
-		// Convert to YAML
-		yamlContent, err := convertJobToYAML(job.Name, job.ID, rawData)
+		yamlContent, err := convertJobToYAMLFull(job.Name, job.ID, rawData)
 		if err != nil {
 			fmt.Printf("Warning: Failed to convert job %s: %v\n", job.Name, err)
 			failedCount++
 			continue
 		}
 
-		// Sanitize job name for filename
 		filename := sanitizeFilename(job.Name) + ".yaml"
-		filepath := filepath.Join(outputDir, filename)
+		fp := filepath.Join(outDir, filename)
 
-		// Write to file
-		if err := os.WriteFile(filepath, yamlContent, 0644); err != nil {
+		if err := os.WriteFile(fp, yamlContent, 0644); err != nil {
 			fmt.Printf("Warning: Failed to write %s: %v\n", filename, err)
 			failedCount++
 			continue
@@ -163,6 +163,7 @@ func exportAllJobs(profile models.Profile) {
 	}
 
 	fmt.Printf("\nExport complete: %d successful, %d failed\n", successCount, failedCount)
+	return nil
 }
 
 func convertJobToYAML(name, id string, rawData json.RawMessage) ([]byte, error) {
@@ -486,11 +487,7 @@ func sanitizeFilename(name string) string {
 }
 
 func init() {
-	addExportFlags(exportCmd)
-	exportCmd.Deprecated = "use 'owlctl job export' instead"
-	rootCmd.AddCommand(exportCmd)
-
-	// Register job export as subcommand of jobsCmd
+	// Register job export as subcommand of jobsCmd (preferred location)
 	addExportFlags(jobExportCmd)
 	jobsCmd.AddCommand(jobExportCmd)
 }

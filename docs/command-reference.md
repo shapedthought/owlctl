@@ -1,12 +1,13 @@
 # Command Quick Reference
 
-Fast reference for common owlctl commands. See full documentation in [User Guide](../user_guide.md) and [Drift Detection Guide](drift-detection.md).
+Fast reference for common owlctl commands. See full documentation in the [Getting Started Guide](getting-started.md) and [Drift Detection Guide](drift-detection.md).
 
 ## Table of Contents
 
 - [Setup & Authentication](#setup--authentication)
 - [Imperative Commands (All Products)](#imperative-commands-all-products)
 - [Declarative Commands (VBR Only)](#declarative-commands-vbr-only)
+- [State Commands](#state-commands)
 - [Group Commands](#group-commands)
 - [Context Commands](#context-commands)
 - [Instance Commands](#instance-commands)
@@ -106,6 +107,40 @@ owlctl get sessions/<id>                    # Session details
 
 ## Declarative Commands (VBR Only)
 
+### Global Bulk Operations
+
+Export or snapshot all resource types in a single command:
+
+```bash
+# Export all resource types for the active instance
+owlctl export --all                             # writes to ./exports/
+owlctl export --all -d ./infra                  # custom output directory
+
+# Export all instances (one folder per instance)
+owlctl export --all --all-instances -d ./infra
+
+# Export from state.json without contacting VBR (offline)
+owlctl export --all --from-state -d ./infra
+
+# Snapshot all resource types for the active instance
+owlctl snapshot --all
+
+# Snapshot all instances at once
+owlctl snapshot --all --all-instances
+```
+
+The export writes one folder per resource type under the output dir (with `--all-instances`, each instance gets its own `<instance>/` subfolder):
+```
+exports/
+  jobs/           daily-backup.yaml
+  repos/          primary-repo.yaml
+  sobrs/          scale-out-repo.yaml
+  encryption/     my-password.yaml
+  kms/            kms-server.yaml
+```
+
+> **Note:** `snapshot --all` covers repositories, SOBRs, encryption passwords, and KMS servers. Jobs are skipped (baselined via `job apply`); configuration backup is snapshotted separately with `config-backup snapshot`.
+
 ### Export Resources
 
 ```bash
@@ -186,19 +221,20 @@ owlctl config-backup apply config-backup.yaml --overlay prod-overlay.yaml
 ### Snapshot State
 
 ```bash
-# Repositories
+# Snapshot everything at once (recommended for onboarding)
+owlctl snapshot --all
+owlctl snapshot --all --all-instances          # across all defined instances
+
+# Per-resource-type (for selective snapshots)
 owlctl repo snapshot <name>
 owlctl repo snapshot --all
 
-# SOBRs
 owlctl repo sobr-snapshot <name>
 owlctl repo sobr-snapshot --all
 
-# Encryption Passwords
 owlctl encryption snapshot <name>
 owlctl encryption snapshot --all
 
-# KMS Servers
 owlctl encryption kms-snapshot <name>
 owlctl encryption kms-snapshot --all
 
@@ -206,7 +242,7 @@ owlctl encryption kms-snapshot --all
 owlctl config-backup snapshot
 ```
 
-**Note:** Jobs are snapshotted automatically on apply.
+**Note:** Jobs are snapshotted automatically on apply. `snapshot --all` skips jobs for this reason.
 
 ### Detect Drift
 
@@ -242,6 +278,29 @@ owlctl job plan base.yaml
 owlctl job plan base.yaml --overlay prod.yaml
 owlctl job plan base.yaml --overlay prod.yaml --show-yaml
 ```
+
+---
+
+## State Commands
+
+Inspect the tracked resources recorded in `state.json` (resources are scoped per instance — see [State Management](state-management.md)).
+
+```bash
+# List all tracked resources (Instance, Name, Type, Origin, LastApplied)
+owlctl state list
+owlctl state list --instance vbr-prod      # filter to one instance
+
+# Show full detail and spec for one resource
+owlctl state show "Database Backup"
+
+# Show the audit trail (snapshotted / created / applied) for a resource
+owlctl state history "Database Backup"
+
+# Print the resolved state.json path
+owlctl state path
+```
+
+`origin` is `applied` (written by `apply`) or `observed` (written by `snapshot`).
 
 ---
 
@@ -500,17 +559,20 @@ owlctl get jobs | jq '.data[] | {name: .name, type: .type}'
 ### Export All Configurations
 
 ```bash
-# Export everything to Git
-owlctl job export --all -d specs/jobs/
-owlctl repo export --all -d specs/repos/
-owlctl repo sobr-export --all -d specs/sobrs/
-owlctl encryption kms-export --all -d specs/kms/
-owlctl config-backup export -o specs/config-backup.yaml
+# Export everything in one command
+owlctl export --all -d specs/
+owlctl config-backup export -o specs/config-backup.yaml   # singleton, not included in export --all
 
 # Commit to Git
 git add specs/
 git commit -m "Snapshot VBR configuration"
 git push
+
+# Or export per resource type (for selective exports or overlay support)
+owlctl job export --all -d specs/jobs/
+owlctl repo export --all -d specs/repos/
+owlctl repo sobr-export --all -d specs/sobrs/
+owlctl encryption kms-export --all -d specs/kms/
 ```
 
 ### Group-Based Deployment
@@ -592,20 +654,14 @@ echo "No critical drift detected"
 ### Bootstrap Declarative Management
 
 ```bash
-# 1. Export current VBR state
-owlctl job export --all -d infrastructure/jobs/
-owlctl repo export --all -d infrastructure/repos/
-owlctl repo sobr-export --all -d infrastructure/sobrs/
-owlctl encryption kms-export --all -d infrastructure/kms/
+# 1. Export all VBR resources to YAML
+owlctl export --all -d infrastructure/
 
-# 2. Snapshot current state
-owlctl repo snapshot --all
-owlctl repo sobr-snapshot --all
-owlctl encryption snapshot --all
-owlctl encryption kms-snapshot --all
+# 2. Snapshot all resources to set drift detection baseline
+owlctl snapshot --all
 
 # 3. Commit to Git (state.json and specs)
-git add infrastructure/ state.json
+git add infrastructure/ ~/.owlctl/state.json
 git commit -m "Bootstrap VBR declarative management"
 git push
 
@@ -666,7 +722,7 @@ owlctl init
 ## See Also
 
 - [Getting Started Guide](getting-started.md) - Complete setup walkthrough
-- [User Guide](../user_guide.md) - Full imperative mode documentation
+- [Imperative Mode Guide](imperative-mode.md) - Full imperative mode documentation
 - [Drift Detection Guide](drift-detection.md) - Complete drift detection reference
 - [Security Alerting](security-alerting.md) - Severity classification details
 - [Azure DevOps Integration](azure-devops-integration.md) - CI/CD pipeline examples

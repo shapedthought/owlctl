@@ -250,13 +250,13 @@ func printSpecSummary(spec map[string]interface{}, indent string) {
 }
 
 // printNotFoundGuidance prints guidance when a resource is not found
-func printNotFoundGuidance(resourceType, resourceName, adoptCmd string) {
+func printNotFoundGuidance(resourceType, resourceName, applyCmd string) {
 	fmt.Fprintf(
 		os.Stderr,
 		"\nError: %s \"%s\" no longer exists in VBR.\n"+
-			"Cannot apply — resource must be recreated manually, then adopted:\n"+
+			"Cannot apply — recreate it manually in the VBR console, then re-apply:\n"+
 			"  %s\n",
-		resourceType, resourceName, adoptCmd,
+		resourceType, resourceName, applyCmd,
 	)
 }
 
@@ -267,7 +267,7 @@ type RemediationGuidance struct {
 	ResourceName string
 	ApplyCmd     string // Command to remediate (for applied resources)
 	ExportCmd    string // Command to export (for observed resources)
-	AdoptCmd     string // Command to adopt (for observed resources)
+	ManageCmd    string // Command to bring an observed resource under management ("" for read-only resources)
 }
 
 // printRemediationGuidance prints appropriate guidance based on resource origin
@@ -283,9 +283,14 @@ func printRemediationGuidance(g RemediationGuidance) {
 			fmt.Printf("  %s\n", g.ApplyCmd)
 		}
 	case "observed":
-		fmt.Printf("\nThis resource is monitored only. To enable remediation:\n")
-		fmt.Printf("  1. Export: %s\n", g.ExportCmd)
-		fmt.Printf("  2. Adopt:  %s\n", g.AdoptCmd)
+		if g.ManageCmd == "" {
+			// Read-only resource (e.g. encryption passwords) — cannot be applied.
+			fmt.Printf("\nThis resource is read-only and monitored only. Remediate manually in the VBR console.\n")
+		} else {
+			fmt.Printf("\nThis resource is monitored only (origin: observed). To bring it under declarative management:\n")
+			fmt.Printf("  1. Export: %s\n", g.ExportCmd)
+			fmt.Printf("  2. Apply:  %s\n", g.ManageCmd)
+		}
 	default:
 		// Legacy resource without origin - show snapshot command
 		fmt.Printf("\nThe %s has drifted from the snapshot configuration.\n", g.ResourceType)
@@ -320,7 +325,7 @@ func BuildRepoGuidance(resourceName, origin string) RemediationGuidance {
 		ResourceName: resourceName,
 		ApplyCmd:     fmt.Sprintf("owlctl repo apply repos/%s.yaml", sanitizeFileName(resourceName)),
 		ExportCmd:    fmt.Sprintf("owlctl repo export \"%s\" -o repos/%s.yaml", resourceName, sanitizeFileName(resourceName)),
-		AdoptCmd:     fmt.Sprintf("owlctl repo adopt repos/%s.yaml", sanitizeFileName(resourceName)),
+		ManageCmd:    fmt.Sprintf("owlctl repo apply repos/%s.yaml", sanitizeFileName(resourceName)),
 	}
 }
 
@@ -332,19 +337,20 @@ func BuildSobrGuidance(resourceName, origin string) RemediationGuidance {
 		ResourceName: resourceName,
 		ApplyCmd:     fmt.Sprintf("owlctl repo sobr-apply sobrs/%s.yaml", sanitizeFileName(resourceName)),
 		ExportCmd:    fmt.Sprintf("owlctl repo sobr-export \"%s\" -o sobrs/%s.yaml", resourceName, sanitizeFileName(resourceName)),
-		AdoptCmd:     fmt.Sprintf("owlctl repo sobr-adopt sobrs/%s.yaml", sanitizeFileName(resourceName)),
+		ManageCmd:    fmt.Sprintf("owlctl repo sobr-apply sobrs/%s.yaml", sanitizeFileName(resourceName)),
 	}
 }
 
-// BuildJobGuidance creates guidance for job diff
-func BuildJobGuidance(resourceName, origin string) RemediationGuidance {
+// BuildJobGuidance creates guidance for job diff. Job export is keyed by ID
+// (the `owlctl job export` subcommand takes a job ID, not a name).
+func BuildJobGuidance(resourceName, resourceID, origin string) RemediationGuidance {
 	return RemediationGuidance{
 		Origin:       origin,
 		ResourceType: "job",
 		ResourceName: resourceName,
 		ApplyCmd:     fmt.Sprintf("owlctl job apply jobs/%s.yaml", sanitizeFileName(resourceName)),
-		ExportCmd:    fmt.Sprintf("owlctl export \"%s\" -o jobs/%s.yaml", resourceName, sanitizeFileName(resourceName)),
-		AdoptCmd:     fmt.Sprintf("owlctl job adopt jobs/%s.yaml", sanitizeFileName(resourceName)),
+		ExportCmd:    fmt.Sprintf("owlctl job export %s -o jobs/%s.yaml", resourceID, sanitizeFileName(resourceName)),
+		ManageCmd:    fmt.Sprintf("owlctl job apply jobs/%s.yaml", sanitizeFileName(resourceName)),
 	}
 }
 
@@ -354,10 +360,10 @@ func BuildEncryptionGuidance(resourceName, origin string) RemediationGuidance {
 		Origin:       origin,
 		ResourceType: "encryption password",
 		ResourceName: resourceName,
-		// Encryption passwords are read-only in VBR API - empty ApplyCmd triggers read-only message
+		// Encryption passwords are read-only in VBR API - empty ApplyCmd/ManageCmd triggers read-only message
 		ApplyCmd:  "",
 		ExportCmd: fmt.Sprintf("owlctl encryption export \"%s\" -o encryption/%s.yaml", resourceName, sanitizeFileName(resourceName)),
-		AdoptCmd:  fmt.Sprintf("owlctl encryption adopt encryption/%s.yaml", sanitizeFileName(resourceName)),
+		ManageCmd: "",
 	}
 }
 
@@ -369,7 +375,7 @@ func BuildKmsGuidance(resourceName, origin string) RemediationGuidance {
 		ResourceName: resourceName,
 		ApplyCmd:     fmt.Sprintf("owlctl encryption kms-apply kms/%s.yaml", sanitizeFileName(resourceName)),
 		ExportCmd:    fmt.Sprintf("owlctl encryption kms-export \"%s\" -o kms/%s.yaml", resourceName, sanitizeFileName(resourceName)),
-		AdoptCmd:     fmt.Sprintf("owlctl encryption kms-adopt kms/%s.yaml", sanitizeFileName(resourceName)),
+		ManageCmd:    fmt.Sprintf("owlctl encryption kms-apply kms/%s.yaml", sanitizeFileName(resourceName)),
 	}
 }
 

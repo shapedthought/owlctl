@@ -16,7 +16,7 @@
 ![nu_demo](./assets/main.png)
 **Formatting provided by [Nushell.](https://www.nushell.sh/)** owlctl only gets the data!
 
-See the [User guide](https://github.com/shapedthought/owlctl/blob/master/user_guide.md) for more information.
+New to owlctl? Start with the [Getting Started guide](docs/getting-started.md), then walk the core declarative loop in the [Tutorial](docs/tutorial.md).
 
 NOTE:
 
@@ -113,18 +113,20 @@ export OWLCTL_URL="vbr.example.com"
 ./owlctl job diff --all --security-only
 ```
 
-📖 **Next steps:** [Getting Started](docs/getting-started.md) | [State Management](docs/state-management.md) | [GitOps Workflows](docs/gitops-workflows.md) | [Drift Detection](docs/drift-detection.md) | [Azure DevOps Integration](docs/azure-devops-integration.md)
+📖 **Next steps:** [Getting Started](docs/getting-started.md) | [Tutorial](docs/tutorial.md) | [State Management](docs/state-management.md) | [GitOps Workflows](docs/gitops-workflows.md) | [Drift Detection](docs/drift-detection.md) | [Azure DevOps Integration](docs/azure-devops-integration.md)
 
 ## Documentation
 
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Installation, setup, first commands — start here |
+| [Tutorial](docs/tutorial.md) | Walk the core loop: export a job, edit it, apply, detect drift |
 | [Declarative Mode](docs/declarative-mode.md) | Infrastructure-as-code for VBR: export, apply, overlays, groups, instances |
 | [State Management](docs/state-management.md) | How state works, instance scoping, bootstrapping drift detection |
 | [Drift Detection](docs/drift-detection.md) | Severity classification, filtering, exit codes |
 | [Security Alerting](docs/security-alerting.md) | Value-aware severity reference, cross-resource validation |
 | [Imperative Mode](docs/imperative-mode.md) | GET/POST/PUT API operations, output formatting |
+| [Why GitOps](docs/gitops-for-backup-infrastructure.md) | The conceptual case for managing backup infrastructure as code |
 | [GitOps Workflows](docs/gitops-workflows.md) | GitHub Actions, Azure DevOps, GitLab CI integration |
 | [Azure DevOps Integration](docs/azure-devops-integration.md) | Pipeline templates, scheduled scans, PR validation |
 | [Authentication](docs/authentication.md) | Credentials, token storage, multi-product switching |

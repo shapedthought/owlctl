@@ -42,7 +42,7 @@ Create a Variable Group named `veeam-credentials` in your Azure DevOps project:
 4. Add variables:
    - `OWLCTL_USERNAME` - VBR API username
    - `OWLCTL_PASSWORD` - VBR API password (mark as **secret**)
-   - `OWLCTL_URL` - VBR server URL (e.g., `https://vbr.example.com:9419`)
+   - `OWLCTL_URL` - VBR hostname or IP only, no scheme or port (e.g., `vbr.example.com`)
 5. (Optional) `SLACK_WEBHOOK_URL` for notifications
 
 **Security note:** Use Azure Key Vault linked Variable Groups for production environments.
@@ -379,7 +379,7 @@ rules:
 Error: failed to login
 ```
 
-- Verify `OWLCTL_URL` includes port (e.g., `https://vbr:9419`)
+- Verify `OWLCTL_URL` is the hostname/IP only — no scheme or port (e.g., `vbr.example.com`, not `https://vbr:9419`)
 - Check username format (may need `DOMAIN\user`)
 - Ensure VBR REST API is enabled
 
@@ -390,7 +390,7 @@ Error: resource 'X' not found in VBR (update-only mode)
 ```
 
 - Resource was deleted from VBR
-- Must recreate in VBR console, then re-adopt
+- Must recreate in VBR console, then re-apply the exported spec
 
 ### TLS Certificate Errors
 
@@ -419,11 +419,11 @@ Import-Certificate -FilePath vbr-ca.crt -CertStoreLocation Cert:\LocalMachine\Ro
 
 **Option 2: Skip TLS verification (not recommended for production)**
 
-Set `skipTLSVerify: true` in settings.json. This bypasses certificate validation entirely and should only be used for testing.
+Set `apiNotSecure: true` in settings.json. This bypasses certificate validation entirely and should only be used for testing.
 
 ```json
 {
-  "skipTLSVerify": true,
+  "apiNotSecure": true,
   "credsFileMode": false
 }
 ```

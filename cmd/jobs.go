@@ -455,7 +455,7 @@ func diffSingleJob(jobName string) {
 	}
 
 	// Show guidance based on origin
-	printRemediationGuidance(BuildJobGuidance(jobName, resource.Origin))
+	printRemediationGuidance(BuildJobGuidance(jobName, resource.ID, resource.Origin))
 
 	os.Exit(exitCodeForDrifts(drifts))
 }
@@ -539,7 +539,7 @@ func diffAllJobs() {
 		fmt.Printf("  - %d jobs drifted — remediate with: owlctl job apply <spec>.yaml\n", driftedApplied)
 	}
 	if driftedObserved > 0 {
-		fmt.Printf("  - %d jobs drifted (observed) — adopt to enable remediation\n", driftedObserved)
+		fmt.Printf("  - %d jobs drifted (observed, monitor-only) — export then apply a spec to enable remediation\n", driftedObserved)
 	}
 
 	if totalDrifted > 0 {

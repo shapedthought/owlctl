@@ -29,7 +29,7 @@ type State struct {
 
 // ResourceEvent represents an action taken on a resource
 type ResourceEvent struct {
-	Action    string    `json:"action"`           // "snapshotted", "adopted", "applied", "created"
+	Action    string    `json:"action"`           // "snapshotted", "applied", "created"
 	Timestamp time.Time `json:"timestamp"`        // When the action occurred
 	User      string    `json:"user"`             // Who performed the action
 	Fields    []string  `json:"fields,omitempty"` // Fields that were changed (for apply/created)

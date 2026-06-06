@@ -12,6 +12,7 @@ Imperative mode provides direct API access to all Veeam products. Use it for qui
 - [Output Formats](#output-formats)
 - [Using with jq](#using-with-jq)
 - [Using with Nushell](#using-with-nushell)
+- [Editing Values with sd](#editing-values-with-sd)
 - [Common Endpoints](#common-endpoints)
 - [Best Practices](#best-practices)
 
@@ -493,6 +494,33 @@ v vget jobs | where isDisabled == false
 | Learning curve | Steeper | Gentler |
 | Speed | Very fast | Fast |
 | Use case | Quick scripts | Interactive exploration |
+
+## Editing Values with sd
+
+[sd](https://crates.io/crates/sd) (written in Rust 🦀) is a find-and-replace tool that works like `sed` but with a simpler regex syntax. It's handy for changing a value in a saved response without opening an editor — useful when scripting imperative `PUT`/`POST` workflows.
+
+```bash
+# Check the current value first
+cat job.json | jq '.name'
+
+# Replace a value in a file
+sd '"name": "Backup Job 2"' '"name": "Backup Job 12"' ./job.json
+
+# Pipe owlctl output straight through sd
+owlctl get jobs/<id> | sd '"name": "Old Name"' '"name": "New Name"' > job.json
+```
+
+**Installation:**
+```bash
+# macOS (Homebrew)
+brew install sd
+
+# Rust package manager
+cargo install sd
+
+# Windows (Chocolatey)
+choco install sd-cli
+```
 
 ## Common Endpoints
 

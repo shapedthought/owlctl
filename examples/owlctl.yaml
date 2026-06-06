@@ -4,13 +4,33 @@
 apiVersion: owlctl.veeam.com/v1
 kind: Config
 
+# Instances define named VBR server connections.
+# Credentials are read from environment variables (never stored here):
+#   credentialRef: PROD  ->  OWLCTL_PROD_USERNAME / OWLCTL_PROD_PASSWORD
+#   (omit credentialRef to fall back to OWLCTL_USERNAME / OWLCTL_PASSWORD)
+# Switch with the global flag: owlctl --instance primary job apply --group db-tier
+instances:
+  primary:
+    product: vbr
+    url: vbr-prod.example.com        # hostname/IP only — no scheme, no port
+    credentialRef: PROD
+    description: Production VBR server
+
+  dr:
+    product: vbr
+    url: vbr-dr.example.com
+    credentialRef: DR
+    description: Disaster recovery site
+
 # Groups bundle specs with a shared profile and overlay for batch operations.
+# A group may pin an instance (auto-activated on apply/diff) and/or a specsDir.
 # Apply a group: owlctl job apply --group db-tier
 # Diff a group:  owlctl job diff --group db-tier
 groups:
   db-tier:
     description: Database backups — encrypted, 14-day retention, SQL guest processing
-    profile: profiles/standard-db-backup.yaml      # kind: Profile — base defaults
+    instance: primary                               # auto-activates the primary instance
+    profile: profiles/standard-db-backup.yaml       # kind: Profile — base defaults
     overlay: overlays/enable-encryption.yaml        # kind: Overlay — policy patch
     specs:
       - specs/sql-daily.yaml
@@ -21,36 +41,26 @@ groups:
     specs:
       - specs/file-backup.yaml
 
-# Targets define named VBR server connections.
-# Use --target to switch: owlctl job apply --group db-tier --target primary
-targets:
-  primary:
-    url: https://vbr-prod.example.com
-    description: Production VBR server
-
-  dr:
-    url: https://vbr-dr.example.com
-    description: Disaster recovery site
-
 # Usage Examples:
 #
-# 1. List groups and targets
+# 1. List groups and instances
 #    owlctl group list
-#    owlctl target list
+#    owlctl instance list
 #
-# 2. Show group details (resolved paths, spec count)
+# 2. Show group / instance details (resolved paths, spec count)
 #    owlctl group show db-tier
+#    owlctl instance show primary
 #
-# 3. Apply a group (dry-run first)
+# 3. Apply a group (dry-run first) — uses the group's pinned instance
 #    owlctl job apply --group db-tier --dry-run
 #    owlctl job apply --group db-tier
 #
-# 4. Apply a group to a specific target
-#    owlctl job apply --group db-tier --target primary
-#    owlctl job apply --group db-tier --target dr
+# 4. Override the instance for an apply/diff with the global --instance flag
+#    owlctl --instance primary job apply --group file-tier
+#    owlctl --instance dr job diff --group db-tier
 #
 # 5. Drift check a group
-#    owlctl job diff --group db-tier --target primary
+#    owlctl job diff --group db-tier
 #
 # 6. Single-file overlay (no group needed)
 #    owlctl job apply jobs/database-backup.yaml --overlay overlays/retention-30d.yaml
