@@ -169,12 +169,25 @@ func runExportFromState(outDir string) {
 	}
 }
 
+// fromStateIgnoreFields maps each resource kind to the ignore-field set its live
+// exporter strips, so `export --from-state` produces the same YAML as a live export.
+var fromStateIgnoreFields = map[string]map[string]bool{
+	"VBRJob":                 jobIgnoreFields,
+	"VBRRepository":          repoIgnoreFields,
+	"VBRScaleOutRepository":  sobrIgnoreFields,
+	"VBREncryptionPassword":  encryptionIgnoreFields,
+	"VBRKmsServer":           kmsIgnoreFields,
+	"VBRConfigurationBackup": configBackupIgnoreFields,
+}
+
 // exportInstanceFromState writes YAML files for all resources in a state instance.
 func exportInstanceFromState(instanceName string, inst *state.InstanceState, outDir string) {
-	// Build a Kind → FolderName map from registry
+	// Build a Kind → FolderName map across all registered products. We don't key
+	// on inst.Product: state migrated from v3 doesn't have Product set, which
+	// would otherwise return no exporter and bucket every resource under "unknown/".
 	kindToFolder := make(map[string]string)
-	if pe := findProductExporter(inst.Product); pe != nil {
-		for _, e := range pe.Resources {
+	for i := range exportRegistry {
+		for _, e := range exportRegistry[i].Resources {
 			kindToFolder[e.Kind] = e.FolderName
 		}
 	}
@@ -228,6 +241,12 @@ func exportInstanceFromState(instanceName string, inst *state.InstanceState, out
 			fmt.Printf("Warning: Failed to unmarshal spec for %q: %v\n", e.name, err)
 			failedCount++
 			continue
+		}
+
+		// Strip the same ignore fields (id, uniqueId, runtime timestamps, ...) that
+		// live exports remove, so --from-state YAML matches a live export.
+		if fields, ok := fromStateIgnoreFields[e.res.Type]; ok {
+			removeIgnoreFields(resourceSpec.Spec, fields)
 		}
 
 		appliedLabel := "Last applied"
