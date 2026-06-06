@@ -27,7 +27,9 @@ var globalExportCmd = &cobra.Command{
 	Use:   "export",
 	Short: "Export all resource types to declarative YAML",
 	Long: `Export all resource types for the active instance to declarative YAML files,
-organised into a product/instance/resource-type directory structure.
+organised into one folder per resource type under the output directory. With
+--all-instances, each instance is written to its own subfolder
+(<instance>/<resource-type>/).
 
 This command is typically used to initialise a GitOps repository from an existing
 Veeam environment, or to take a point-in-time export of all configurations.
@@ -228,8 +230,12 @@ func exportInstanceFromState(instanceName string, inst *state.InstanceState, out
 			continue
 		}
 
-		header := fmt.Sprintf("# %s Configuration (from state)\n# Instance: %s\n# Resource ID: %s\n# Last applied: %s\n\n",
-			e.res.Type, instanceName, e.res.ID, e.res.LastApplied.Format("2006-01-02 15:04:05"))
+		appliedLabel := "Last applied"
+		if e.res.Origin == "observed" {
+			appliedLabel = "Last snapshotted"
+		}
+		header := fmt.Sprintf("# %s Configuration (from state)\n# Instance: %s\n# Resource ID: %s\n# %s: %s\n\n",
+			e.res.Type, instanceName, e.res.ID, appliedLabel, e.res.LastApplied.Format("2006-01-02 15:04:05"))
 
 		yamlBytes, err := yaml.Marshal(resourceSpec)
 		if err != nil {

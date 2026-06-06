@@ -23,8 +23,10 @@ var globalSnapshotCmd = &cobra.Command{
 Use this command to baseline an entire environment at once, rather than
 running individual snapshot commands for each resource type.
 
-Jobs are skipped — they are managed declaratively via 'job apply' and do
-not have a snapshot command. All other VBR resource types are snapshotted.
+Repositories, SOBRs, encryption passwords, and KMS servers are snapshotted.
+Jobs are skipped here — they are baselined automatically by 'job apply' and
+can be snapshotted individually with 'job snapshot'. Configuration backup is
+not included; snapshot it with 'config-backup snapshot'.
 
 Examples:
   # Snapshot all resources for the active instance

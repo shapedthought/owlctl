@@ -129,7 +129,7 @@ owlctl snapshot --all
 owlctl snapshot --all --all-instances
 ```
 
-The export folder structure mirrors `product/resource-type/`:
+The export writes one folder per resource type under the output dir (with `--all-instances`, each instance gets its own `<instance>/` subfolder):
 ```
 exports/
   jobs/           daily-backup.yaml
@@ -139,7 +139,7 @@ exports/
   kms/            kms-server.yaml
 ```
 
-> **Note:** Jobs are skipped by `snapshot --all` (they are managed declaratively via `job apply`). All other VBR resource types are included.
+> **Note:** `snapshot --all` covers repositories, SOBRs, encryption passwords, and KMS servers. Jobs are skipped (baselined via `job apply`); configuration backup is snapshotted separately with `config-backup snapshot`.
 
 ### Export Resources
 
