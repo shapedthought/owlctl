@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"text/tabwriter"
 
@@ -70,8 +71,64 @@ Examples:
   owlctl state path
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		stateMgr := state.NewManager()
-		fmt.Println(stateMgr.GetStatePath())
+		stateMgr := state.NewManagerQuiet()
+		p := stateMgr.GetStatePath()
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		// stdout carries only the path so $(owlctl state path) is safe in scripts.
+		if legacy := stateMgr.LegacyStatePath(); legacy != "" {
+			fmt.Fprintf(os.Stderr, "note: legacy state at %s; run 'owlctl state migrate'\n", legacy)
+		}
+		fmt.Println(p)
+	},
+}
+
+var (
+	migrateFrom   string
+	migrateTo     string
+	migrateForce  bool
+	migrateDryRun bool
+)
+
+var stateMigrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "Move legacy ~/.owlctl/state.json to the current state location",
+	Long: `Move a state file from the legacy location (~/.owlctl/state.json) to where
+owlctl now keeps state (next to settings.json: OWLCTL_SETTINGS_PATH or the
+current directory).
+
+The source is validated, backed up as state.json.bak-<UTC timestamp> next to
+the source, then moved. Refuses to overwrite an existing destination unless
+--force is given (the destination is backed up first).
+
+Examples:
+  owlctl state migrate --dry-run
+  owlctl state migrate
+  owlctl state migrate --from ~/old/state.json --to ./state.json --force
+`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		res, err := state.MigrateState(state.MigrateOptions{
+			From: migrateFrom, To: migrateTo, Force: migrateForce, DryRun: migrateDryRun,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if res.NothingToMigrate {
+			fmt.Printf("Nothing to migrate: no state file at %s\n", res.From)
+			return
+		}
+		prefix := "Done: "
+		if migrateDryRun {
+			prefix = "[dry-run] would "
+		}
+		fmt.Printf("%sback up %s -> %s\n", prefix, res.From, res.SourceBackup)
+		if res.DestBackup != "" {
+			fmt.Printf("%sback up existing %s -> %s\n", prefix, res.To, res.DestBackup)
+		}
+		fmt.Printf("%smove %s -> %s\n", prefix, res.From, res.To)
 	},
 }
 
@@ -299,5 +356,10 @@ func init() {
 	stateCmd.AddCommand(stateShowCmd)
 	stateCmd.AddCommand(statePathCmd)
 	stateCmd.AddCommand(stateHistoryCmd)
+	stateMigrateCmd.Flags().StringVar(&migrateFrom, "from", "", "Source state file (default: ~/.owlctl/state.json)")
+	stateMigrateCmd.Flags().StringVar(&migrateTo, "to", "", "Destination state file (default: resolved state path)")
+	stateMigrateCmd.Flags().BoolVar(&migrateForce, "force", false, "Replace an existing destination (backed up first)")
+	stateMigrateCmd.Flags().BoolVar(&migrateDryRun, "dry-run", false, "Show what would happen without changing anything")
+	stateCmd.AddCommand(stateMigrateCmd)
 	rootCmd.AddCommand(stateCmd)
 }

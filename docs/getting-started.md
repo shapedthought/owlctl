@@ -529,10 +529,11 @@ sudo update-ca-certificates
 **Solution:**
 ```bash
 # Backup current state
-cp ~/.owlctl/state.json ~/.owlctl/state.json.backup
+STATE=$(owlctl state path)
+cp "$STATE" "$STATE.backup"
 
 # Reset state (WARNING: loses drift detection history)
-rm ~/.owlctl/state.json
+rm "$STATE"
 
 # Re-snapshot resources
 ./owlctl snapshot --all

@@ -22,7 +22,7 @@ owlctl provides drift detection across multiple VBR resource types. It compares 
 
 ### State File
 
-State is stored in `state.json` at either `$OWLCTL_SETTINGS_PATH` or `~/.owlctl/`. Resources are scoped by instance so multiple VBR servers don't collide.
+State is stored in `state.json` in `$OWLCTL_SETTINGS_PATH`, or the current directory when unset (next to `settings.json`). Resources are scoped by instance so multiple VBR servers don't collide.
 
 ```json
 {

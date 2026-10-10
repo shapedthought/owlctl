@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `owlctl state migrate` moves a legacy `~/.owlctl/state.json` to the current state location, with validation, a timestamped backup, `--dry-run`, `--force`, `--from`/`--to` (#156)
+
+### Changed
+- The default state location now follows settings: with `OWLCTL_SETTINGS_PATH` unset, `state.json` resolves to the current directory next to `settings.json` instead of `~/.owlctl/`. A legacy `~/.owlctl/state.json` is detected and warned about, and moved only by `owlctl state migrate` (#156)
+- `owlctl state path` prints only the absolute resolved path on stdout; the legacy-state note goes to stderr so `$(owlctl state path)` is script-safe (#156)
+- Read-only commands (`diff`, `state list/show/history`) fall back to a legacy `~/.owlctl/state.json` when no state exists at the resolved path, so drift checks never pass silently. Writes go only to the resolved path; the legacy file is never modified (#156)
+- `owlctl state migrate` rejects sources that are not owlctl state (version 1-4 structure) and leaves them untouched (#156)
+- `examples/pipelines/gitops-deploy.yml` sets `OWLCTL_SETTINGS_PATH` so `git add state.json` commits state (#156)
+
+### Fixed
+- `state.NewManager()` no longer creates `~/.owlctl` as a side effect, and the active product is read from the same `settings.json` the rest of owlctl uses (#156)
+
 ## [1.2.2] - 2026-03-07
 
 ### Fixed

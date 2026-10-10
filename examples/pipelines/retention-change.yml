@@ -242,7 +242,7 @@ stages:
               # Restore specs and state
               cp $(Pipeline.Workspace)/job-specs/base-job.yaml .
               cp $(Pipeline.Workspace)/job-specs/retention-overlay.yaml .
-              cp $(Pipeline.Workspace)/job-specs/state.json ~/.owlctl/state.json 2>/dev/null || true
+              cp $(Pipeline.Workspace)/job-specs/state.json ./state.json 2>/dev/null || true
             displayName: 'Build owlctl and restore specs'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
@@ -309,7 +309,7 @@ stages:
               # Restore specs and state
               cp $(Pipeline.Workspace)/job-specs/base-job.yaml .
               cp $(Pipeline.Workspace)/job-specs/retention-overlay.yaml .
-              cp $(Pipeline.Workspace)/job-specs/state.json ~/.owlctl/state.json 2>/dev/null || true
+              cp $(Pipeline.Workspace)/job-specs/state.json ./state.json 2>/dev/null || true
             displayName: 'Build owlctl and restore specs'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)

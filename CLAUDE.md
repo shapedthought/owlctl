@@ -160,7 +160,8 @@ All diff commands support:
 #### State Management
 
 **State File Location:**
-- `$OWLCTL_SETTINGS_PATH/state.json` or `~/.owlctl/state.json`
+- `$OWLCTL_SETTINGS_PATH/state.json`, or `./state.json` (current directory, next to settings.json) when unset. Resolved by `internal/paths`.
+- A legacy `~/.owlctl/state.json` is warned about (never auto-moved); move it with `owlctl state migrate`
 
 **State File Structure (v4 — current):**
 ```json

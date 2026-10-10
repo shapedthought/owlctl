@@ -661,7 +661,7 @@ owlctl export --all -d infrastructure/
 owlctl snapshot --all
 
 # 3. Commit to Git (state.json and specs)
-git add infrastructure/ ~/.owlctl/state.json
+git add infrastructure/ state.json   # state.json sits next to settings.json (see: owlctl state path)
 git commit -m "Bootstrap VBR declarative management"
 git push
 

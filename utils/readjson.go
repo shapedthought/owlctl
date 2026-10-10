@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
+	"path/filepath"
 	"strings"
 
+	"github.com/shapedthought/owlctl/internal/paths"
 	"github.com/shapedthought/owlctl/models"
 	"gopkg.in/yaml.v2"
 )
@@ -45,20 +46,11 @@ func GetCurrentProfile() models.Profile {
 	return GetProfile(settings.SelectedProfile)
 }
 
+// SettingPath returns the config directory with a trailing path separator, so
+// callers can append a file name. With OWLCTL_SETTINGS_PATH unset it resolves
+// to the current directory ("./").
 func SettingPath() string {
-	settingsPath := os.Getenv("OWLCTL_SETTINGS_PATH")
-	if settingsPath != "" {
-		if runtime.GOOS == "windows" {
-			if !strings.HasSuffix(settingsPath, "\\") {
-				settingsPath = settingsPath + "\\"
-			}
-		} else {
-			if !strings.HasSuffix(settingsPath, "/") {
-				settingsPath = settingsPath + "/"
-			}
-		}
-	}
-	return settingsPath
+	return paths.ConfigDir() + string(filepath.Separator)
 }
 
 // ReadProfilesFile reads the profiles.json file (new v1.0 format)
