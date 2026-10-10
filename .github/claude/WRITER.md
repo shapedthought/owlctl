@@ -18,7 +18,7 @@ If two of these disagree, the higher one wins. Note the disagreement in the PR d
 ## Invariants (don't break these, and fix any example that breaks them)
 - `--url` and `url:` in owlctl.yaml are a **hostname or IP only**, with no scheme or port (`vbr-prod.example.com`, not `https://…`). Requests prepend `https://` themselves.
 - `--target` is **deprecated**. Use `--instance` and named instances in all new code and examples.
-- `state.json` lives **next to settings** (`settings.json`/`profiles.json`, in `OWLCTL_SETTINGS_PATH` or the current directory). See #156.
+- **Target invariant, being fixed by #156 (not true yet):** `state.json` lives **next to settings** (`settings.json`/`profiles.json`, in `OWLCTL_SETTINGS_PATH` or the current directory). Today, with `OWLCTL_SETTINGS_PATH` unset, settings resolve to the current directory but state goes to `~/.owlctl/state.json`. Don't assume co-location in unrelated work, and don't make the split worse.
 - `owlctl.yaml` is created by **`owlctl instance add`**, not by `owlctl init`.
 - `state.json` is **not an audit log**. Its `history` is a convenience trail. Git history of the specs is the audit record.
 
