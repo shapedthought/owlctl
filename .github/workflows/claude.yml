@@ -1,0 +1,66 @@
+name: Claude Code
+
+# Interactive @claude runs. Ed (shapedthought) is the only one who can trigger them.
+# Writer rules: .github/claude/WRITER.md
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, assigned]
+
+# One run at a time across the repo, with no parallel writers. A new trigger waits
+# for the running job instead of cancelling it.
+concurrency:
+  group: claude-${{ github.repository }}
+  cancel-in-progress: false
+
+# Nothing is granted by default; the job declares exactly what it needs.
+permissions: {}
+
+jobs:
+  claude:
+    if: |
+      github.actor == 'shapedthought' && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write       # push commits to claude/* branches
+      pull-requests: write  # comment on and update PRs
+      issues: write         # comment on issues
+      id-token: write       # OIDC exchange for the Claude GitHub App token
+      actions: read         # read CI results and job logs on PRs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Only Ed's comments (and Claude's own progress comments) go into Claude's context,
+          # so text from other users can't steer the writer.
+          include_comments_by_actor: "shapedthought,claude[bot]"
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --max-turns 15
+            --append-system-prompt "Before doing anything, read .github/claude/WRITER.md and follow it. Never read or implement from planning/."
+            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,LS,Bash(go build:*),Bash(go test:*),Bash(go vet:*),Bash(gofmt:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git commit:*),Bash(git push:*),mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log"
+            --disallowedTools "WebFetch,WebSearch"

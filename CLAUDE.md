@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Writer rules:** read and follow [`.github/claude/WRITER.md`](.github/claude/WRITER.md) before making any change. Never read or implement from `planning/`.
+
 ## Project Overview
 
 owlctl is a CLI tool written in Go for interacting with Veeam APIs across multiple products (VBR, Enterprise Manager, VB365, VONE, VB for Azure/AWS/GCP).
