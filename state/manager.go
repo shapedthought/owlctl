@@ -98,13 +98,19 @@ func selectedProfileFromSettings() string {
 // Load reads the state file from disk
 // Returns a new empty state if file doesn't exist
 func (m *Manager) Load() (*State, error) {
-	// Check if file exists
-	if _, err := os.Stat(m.statePath); os.IsNotExist(err) {
-		// Return new empty state if file doesn't exist
-		return NewState(), nil
+	readPath := m.statePath
+	if _, err := os.Stat(readPath); os.IsNotExist(err) {
+		// Read-only fallback to legacy state so drift checks never pass silently.
+		// Save always writes to m.statePath; the legacy file is never modified.
+		legacy := m.LegacyStatePath()
+		if legacy == "" {
+			// Return new empty state if file doesn't exist
+			return NewState(), nil
+		}
+		readPath = legacy
 	}
 
-	data, err := os.ReadFile(m.statePath)
+	data, err := os.ReadFile(readPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read state file: %w", err)
 	}
@@ -283,8 +289,11 @@ func (m *Manager) ListResources(resourceType string) ([]*Resource, error) {
 	return state.ListResources(activeInstance(), resourceType), nil
 }
 
-// stateExists checks if the state file exists
+// StateExists reports whether state can be read: the resolved state file, or
+// a legacy ~/.owlctl/state.json that Load falls back to.
 func (m *Manager) StateExists() bool {
-	_, err := os.Stat(m.statePath)
-	return err == nil
+	if _, err := os.Stat(m.statePath); err == nil {
+		return true
+	}
+	return m.LegacyStatePath() != ""
 }

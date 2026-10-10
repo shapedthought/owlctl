@@ -186,6 +186,59 @@ func TestStateMigrate_NothingToMigrate(t *testing.T) {
 	}
 }
 
+func TestStateMigrate_NonStateJSON(t *testing.T) {
+	for _, content := range []string{
+		`{"hello":1}`,
+		`{"version":9,"instances":{}}`,
+		`{"version":4}`,
+		`{"version":3,"resources":[]}`,
+		`[]`,
+	} {
+		cwd, legacy := setupLegacy(t, content)
+		if _, err := MigrateState(MigrateOptions{}); err == nil {
+			t.Errorf("%s: expected error", content)
+		}
+		if got, _ := os.ReadFile(legacy); string(got) != content {
+			t.Errorf("%s: source touched", content)
+		}
+		if entries, _ := os.ReadDir(filepath.Dir(legacy)); len(entries) != 1 {
+			t.Errorf("%s: backup written: %v", content, entries)
+		}
+		if _, err := os.Stat(filepath.Join(cwd, "state.json")); !os.IsNotExist(err) {
+			t.Errorf("%s: destination created", content)
+		}
+	}
+}
+
+func TestLegacyFallback_ReadOnlySeesLegacy_WriteLeavesItUntouched(t *testing.T) {
+	cwd, legacy := setupLegacy(t, legacyV3)
+	m := NewManagerQuiet()
+
+	if !m.StateExists() {
+		t.Fatal("StateExists should be true via legacy fallback")
+	}
+	st, err := m.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := st.GetResource("default", "Repo A"); !ok {
+		t.Fatal("read-only Load did not see legacy resources")
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "state.json")); !os.IsNotExist(err) {
+		t.Error("read created state.json")
+	}
+
+	if err := m.UpdateResource(&Resource{Type: "VBRRepository", ID: "2", Name: "Repo B", Origin: "observed"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(legacy); string(got) != legacyV3 {
+		t.Error("legacy file changed by write")
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "state.json")); err != nil {
+		t.Errorf("write did not go to resolved path: %v", err)
+	}
+}
+
 func TestStateMigrate_InvalidSource(t *testing.T) {
 	_, legacy := setupLegacy(t, "{not json")
 	if _, err := MigrateState(MigrateOptions{}); err == nil {

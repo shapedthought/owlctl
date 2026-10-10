@@ -56,9 +56,8 @@ func MigrateState(opts MigrateOptions) (*MigrateResult, error) {
 		return nil, fmt.Errorf("source and destination are the same file: %s", from)
 	}
 
-	var parsed State
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return nil, fmt.Errorf("source %s is not valid state: %w", from, err)
+	if err := validateStateJSON(data); err != nil {
+		return nil, fmt.Errorf("source %s is not owlctl state: %w", from, err)
 	}
 
 	_, statErr := os.Stat(to)
@@ -108,6 +107,44 @@ func MigrateState(opts MigrateOptions) (*MigrateResult, error) {
 		}
 	}
 	return res, nil
+}
+
+// validateStateJSON checks that data is an owlctl state file (v1 to current):
+// a "version" in range, a "resources" map (v1-v3) or "instances" map (v4),
+// and that it decodes into State.
+func validateStateJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("invalid JSON object: %w", err)
+	}
+	vraw, ok := raw["version"]
+	if !ok {
+		return fmt.Errorf("missing \"version\" field")
+	}
+	var version int
+	if err := json.Unmarshal(vraw, &version); err != nil {
+		return fmt.Errorf("\"version\" is not an integer")
+	}
+	if version < 1 || version > CurrentStateVersion {
+		return fmt.Errorf("unsupported state version %d (expected 1-%d)", version, CurrentStateVersion)
+	}
+	key := "resources"
+	if version >= 4 {
+		key = "instances"
+	}
+	field, ok := raw[key]
+	if !ok {
+		return fmt.Errorf("missing %q field for state v%d", key, version)
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(field, &obj); err != nil || obj == nil {
+		return fmt.Errorf("%q must be an object", key)
+	}
+	var parsed State
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return fmt.Errorf("invalid state structure: %w", err)
+	}
+	return nil
 }
 
 func writeFileSync(path string, data []byte, perm os.FileMode) error {

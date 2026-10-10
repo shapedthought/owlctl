@@ -51,7 +51,7 @@ export OWLCTL_SETTINGS_PATH="$(pwd)/.owlctl/"
 
 **Important:** `OWLCTL_SETTINGS_PATH` controls where `settings.json`, `profiles.json`, and `state.json` all live, keeping them together. With it unset, all of them resolve to the current directory.
 
-**Upgrading from earlier versions:** older releases defaulted state to `~/.owlctl/state.json` when the variable was unset. If owlctl finds that file and none at the new location, it prints a warning naming both paths. State is never moved automatically. Move it with:
+**Upgrading from earlier versions:** older releases defaulted state to `~/.owlctl/state.json` when the variable was unset. If owlctl finds that file and none at the new location, it prints a warning naming both paths. Read-only commands (`diff`, `state list/show/history`) read the legacy file in the meantime, so drift checks still run; writes (`apply`, `snapshot`, ...) go only to the new location and never modify the legacy file. State is never moved automatically. Move it with:
 
 ```bash
 owlctl state migrate --dry-run   # preview
@@ -493,7 +493,7 @@ vim state.json
 **Moving to a new environment:**
 ```bash
 # 1. Export state from old environment
-cp $HOME/.owlctl/state.json state-old-env.json
+cp "$(owlctl state path)" state-old-env.json
 
 # 2. Set up new environment
 export OWLCTL_SETTINGS_PATH="$HOME/.owlctl-new/"

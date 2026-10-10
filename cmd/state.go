@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"text/tabwriter"
 
@@ -71,11 +72,15 @@ Examples:
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		stateMgr := state.NewManagerQuiet()
+		p := stateMgr.GetStatePath()
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
 		if legacy := stateMgr.LegacyStatePath(); legacy != "" {
-			fmt.Printf("%s (legacy: %s; run 'owlctl state migrate')\n", stateMgr.GetStatePath(), legacy)
+			fmt.Printf("%s (legacy: %s; run 'owlctl state migrate')\n", p, legacy)
 			return
 		}
-		fmt.Println(stateMgr.GetStatePath())
+		fmt.Println(p)
 	},
 }
 
