@@ -1,0 +1,33 @@
+name: Release URLs
+
+# Fails if any owlctl release download URL in docs/ or examples/ (or the install
+# template's default tag) returns an HTTP error. See #166.
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - 'examples/**'
+      - 'scripts/check-release-urls.sh'
+      - '.github/workflows/release-urls.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-urls-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-release-urls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check release download URLs
+        run: bash scripts/check-release-urls.sh
