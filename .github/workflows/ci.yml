@@ -8,6 +8,9 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Lets the Claude workflow re-run CI on branches it pushed with GITHUB_TOKEN
+  # (pushes made with GITHUB_TOKEN don't trigger push/pull_request workflows).
+  workflow_dispatch:
 
 jobs:
   build-and-test:
