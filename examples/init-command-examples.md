@@ -167,7 +167,7 @@ jobs:
 
       - name: Download owlctl
         run: |
-          curl -L https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
+          curl -fsSL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz | tar xz
           chmod +x owlctl
 
       - name: Initialize owlctl
@@ -198,10 +198,8 @@ pool:
   vmImage: 'ubuntu-latest'
 
 steps:
-  - script: |
-      curl -L https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
-      chmod +x owlctl
-    displayName: 'Download owlctl'
+  # Pin owlctlVersion to a release tag in the template
+  - template: pipelines/templates/install-owlctl.yml
 
   - script: |
       ./owlctl init --output-dir $(Build.SourcesDirectory)/.owlctl/ --insecure
@@ -227,7 +225,7 @@ steps:
 vbr-drift-check:
   stage: test
   script:
-    - curl -L https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
+    - curl -fsSL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz | tar xz
     - chmod +x owlctl
     - ./owlctl init --output-dir .owlctl/ --insecure
     - ./owlctl profile --set vbr
@@ -257,7 +255,7 @@ pipeline {
         stage('Setup owlctl') {
             steps {
                 sh '''
-                    curl -L https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
+                    curl -fsSL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz | tar xz
                     chmod +x owlctl
                     ./owlctl init --output-dir ${OWLCTL_SETTINGS_PATH} --insecure
                     ./owlctl profile --set vbr
@@ -288,7 +286,7 @@ FROM alpine:latest
 RUN apk add --no-cache bash curl jq
 
 # Download owlctl
-RUN curl -L https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o /usr/local/bin/owlctl \
+RUN curl -fsSL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz | tar xz -C /usr/local/bin owlctl \
     && chmod +x /usr/local/bin/owlctl
 
 # Create config directory
@@ -359,7 +357,8 @@ VCLI_BIN="${HOME}/.local/bin/owlctl"
 # Download owlctl if not exists
 if [ ! -f "$VCLI_BIN" ]; then
     echo "Downloading owlctl..."
-    curl -L https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o "$VCLI_BIN"
+    mkdir -p "$(dirname "$VCLI_BIN")"
+    curl -fsSL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz | tar xz -C "$(dirname "$VCLI_BIN")" owlctl
     chmod +x "$VCLI_BIN"
 fi
 
@@ -391,7 +390,11 @@ $VcliBin = "$HOME\.owlctl\owlctl.exe"
 # Download owlctl if not exists
 if (-not (Test-Path $VcliBin)) {
     Write-Host "Downloading owlctl..."
-    Invoke-WebRequest -Uri "https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-windows-amd64.exe" -OutFile $VcliBin
+    $Zip = Join-Path $env:TEMP "owlctl-windows-amd64.zip"
+    Invoke-WebRequest -Uri "https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-windows-amd64.zip" -OutFile $Zip
+    New-Item -ItemType Directory -Force -Path $VcliDir | Out-Null
+    Expand-Archive -Path $Zip -DestinationPath $VcliDir -Force
+    Remove-Item $Zip
 }
 
 # Initialize owlctl

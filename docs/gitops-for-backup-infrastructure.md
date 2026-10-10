@@ -285,7 +285,7 @@ owlctl's security-aware drift detection -- understanding that disabling encrypti
 
 ```bash
 # Install owlctl
-curl -sL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
+curl -fsSL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz | tar xz
 chmod +x owlctl
 
 # Authenticate

@@ -38,8 +38,6 @@ pool:
 
 variables:
   - group: 'veeam-credentials'
-  - name: owlctlVersion
-    value: 'latest'
   - name: specsPath
     value: 'infrastructure'
   # Keep state.json in the repo checkout so `git add state.json` commits it
@@ -58,11 +56,11 @@ stages:
         steps:
           - checkout: self
 
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
@@ -142,11 +140,11 @@ stages:
               steps:
                 - checkout: self
 
+                - template: templates/install-owlctl.yml
+
                 - script: |
-                    curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-                    chmod +x owlctl
                     ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-                  displayName: 'Install and authenticate owlctl'
+                  displayName: 'Authenticate owlctl'
                   env:
                     OWLCTL_USERNAME: $(OWLCTL_USERNAME)
                     OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
@@ -256,11 +254,11 @@ stages:
           - checkout: self
             persistCredentials: true
 
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
@@ -330,11 +328,11 @@ stages:
       - job: Verify
         displayName: 'Verify configuration applied'
         steps:
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)

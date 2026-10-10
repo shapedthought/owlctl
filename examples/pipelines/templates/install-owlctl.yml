@@ -1,0 +1,38 @@
+# Reusable Azure DevOps step template: download, verify and install owlctl.
+#
+# This is the ONLY place the default owlctl version is defined. Pin
+# owlctlVersion to a release tag (for example v1.2.2); use 'latest' only
+# for throwaway testing. Bump the default as part of each release's prep.
+#
+# Usage:
+#   steps:
+#     - template: templates/install-owlctl.yml        # path relative to the pipeline file
+#       parameters:
+#         owlctlVersion: v1.2.2                       # optional override
+#
+# Installs ./owlctl in the job's working directory.
+parameters:
+  - name: owlctlVersion
+    type: string
+    default: 'v1.2.2'
+
+steps:
+  - bash: |
+      set -euo pipefail
+      ASSET="owlctl-linux-amd64.tar.gz"
+      # 'latest' and pinned tags use different GitHub release URL forms
+      if [ "${OWLCTL_VERSION}" = "latest" ]; then
+        BASE="https://github.com/shapedthought/owlctl/releases/latest/download"
+      else
+        BASE="https://github.com/shapedthought/owlctl/releases/download/${OWLCTL_VERSION}"
+      fi
+      curl -fsSL "${BASE}/${ASSET}" -o "${ASSET}"
+      curl -fsSL "${BASE}/${ASSET}.sha256" -o "${ASSET}.sha256"
+      # release .sha256 files hold only the hash (no filename), so build the line sha256sum expects
+      echo "$(awk '{print $1}' "${ASSET}.sha256")  ${ASSET}" | sha256sum -c -
+      tar xzf "${ASSET}"
+      chmod +x owlctl
+      ./owlctl --help > /dev/null
+    displayName: 'Install owlctl (${{ parameters.owlctlVersion }})'
+    env:
+      OWLCTL_VERSION: ${{ parameters.owlctlVersion }}

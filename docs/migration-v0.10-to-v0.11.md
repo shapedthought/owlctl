@@ -222,9 +222,9 @@ jobs:
     steps:
       - name: Download owlctl
         run: |
-          wget https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64
-          chmod +x owlctl-linux-amd64
-          mv owlctl-linux-amd64 owlctl
+          wget https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz
+          tar xzf owlctl-linux-amd64.tar.gz
+          chmod +x owlctl
 
       - name: Check drift
         env:
@@ -238,9 +238,10 @@ jobs:
 
 ```dockerfile
 FROM ubuntu:latest
-RUN wget https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 && \
-    chmod +x owlctl-linux-amd64 && \
-    mv owlctl-linux-amd64 /usr/local/bin/owlctl
+RUN wget https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz && \
+    tar xzf owlctl-linux-amd64.tar.gz -C /usr/local/bin owlctl && \
+    chmod +x /usr/local/bin/owlctl && \
+    rm owlctl-linux-amd64.tar.gz
 RUN owlctl init profiles
 # At runtime, pass credentials via environment variables
 ```

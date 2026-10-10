@@ -246,8 +246,18 @@ variables:
 variables:
   - name: specsPath
     value: 'my-custom-path'  # Change infrastructure path
-  - name: owlctlVersion
-    value: 'v1.1.0'  # Pin to specific version
+```
+
+**Pinning the owlctl version:** every pipeline installs owlctl through
+[`templates/install-owlctl.yml`](templates/install-owlctl.yml), which downloads the
+release `.tar.gz`, verifies its `.sha256` and runs a smoke test. The default
+`owlctlVersion` is defined only in that template. To pin a different release tag,
+edit the default there, or override it per use:
+
+```yaml
+- template: templates/install-owlctl.yml
+  parameters:
+    owlctlVersion: <release-tag>
 ```
 
 ### pr-validation.yml
