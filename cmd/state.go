@@ -76,9 +76,9 @@ Examples:
 		if abs, err := filepath.Abs(p); err == nil {
 			p = abs
 		}
+		// stdout carries only the path so $(owlctl state path) is safe in scripts.
 		if legacy := stateMgr.LegacyStatePath(); legacy != "" {
-			fmt.Printf("%s (legacy: %s; run 'owlctl state migrate')\n", p, legacy)
-			return
+			fmt.Fprintf(os.Stderr, "note: legacy state at %s; run 'owlctl state migrate'\n", legacy)
 		}
 		fmt.Println(p)
 	},
