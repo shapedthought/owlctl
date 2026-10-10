@@ -17,7 +17,16 @@ Ready-to-use pipeline templates are available in [`examples/pipelines/`](../exam
 
 See the [pipeline README](../examples/pipelines/README.md) for setup instructions.
 
-## Current Integration (v0.12.1)
+## Current Integration
+
+### Installing owlctl in a pipeline
+
+Every pipeline installs owlctl with the shared step template
+[`install-owlctl.yml`](../examples/pipelines/templates/install-owlctl.yml). It downloads the
+release `.tar.gz` and its `.sha256`, verifies the checksum, extracts the binary and runs
+`./owlctl --help` as a smoke test. Copy the template into your repo and pin `owlctlVersion`
+to a release tag; the snippets below reference it as
+`examples/pipelines/templates/install-owlctl.yml`, so adjust the path to match where you put it.
 
 ### What Works Today
 
@@ -62,10 +71,7 @@ variables:
   - group: 'veeam-credentials'  # Contains OWLCTL_USERNAME, OWLCTL_PASSWORD, OWLCTL_URL
 
 steps:
-  - script: |
-      curl -L https://github.com/shapedthought/owlctl/releases/download/v0.12.1-beta1/owlctl-linux-amd64 -o owlctl
-      chmod +x owlctl
-    displayName: 'Install owlctl'
+  - template: examples/pipelines/templates/install-owlctl.yml  # pin owlctlVersion to a release tag
 
   - script: ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
     displayName: 'Authenticate to VBR'
@@ -214,9 +220,9 @@ stages:
       - job: DriftScan
         displayName: 'Scan all resources'
         steps:
+          - template: examples/pipelines/templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/v0.12.1-beta1/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
             displayName: 'Setup owlctl'
             env:
@@ -306,9 +312,9 @@ variables:
   - group: 'veeam-credentials'
 
 steps:
+  - template: examples/pipelines/templates/install-owlctl.yml
+
   - script: |
-      curl -sL https://github.com/shapedthought/owlctl/releases/download/v0.12.1-beta1/owlctl-linux-amd64 -o owlctl
-      chmod +x owlctl
       ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
     displayName: 'Setup owlctl'
     env:
@@ -483,9 +489,10 @@ stages:
     jobs:
       - job: DriftScan
         steps:
+          - template: examples/pipelines/templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl && ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
+              ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
             displayName: 'Setup'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
@@ -522,9 +529,10 @@ stages:
         steps:
           - checkout: self
 
+          - template: examples/pipelines/templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl && ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
+              ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
             displayName: 'Setup'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
@@ -564,9 +572,10 @@ stages:
     jobs:
       - job: VerifyClean
         steps:
+          - template: examples/pipelines/templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl && ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
+              ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
             displayName: 'Setup'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
@@ -920,9 +929,9 @@ variables:
   - group: 'veeam-credentials'
 
 steps:
+  - template: examples/pipelines/templates/install-owlctl.yml
+
   - script: |
-      curl -sL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64 -o owlctl
-      chmod +x owlctl
       ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
     displayName: 'Setup'
     env:

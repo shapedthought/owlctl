@@ -25,8 +25,6 @@ pool:
 
 variables:
   - group: 'veeam-credentials'
-  - name: owlctlVersion
-    value: 'latest'
   - name: specsPath
     value: 'infrastructure'
 
@@ -40,11 +38,11 @@ stages:
         steps:
           - checkout: self
 
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
@@ -58,28 +56,32 @@ stages:
                 [ -f "$spec" ] || continue
                 echo "Validating: $spec"
                 ./owlctl job apply "$spec" --dry-run
-                if [ $? -ne 0 ] && [ $? -ne 6 ]; then FAILED=$((FAILED + 1)); fi
+                rc=$?
+                if [ $rc -ne 0 ] && [ $rc -ne 6 ]; then FAILED=$((FAILED + 1)); fi
               done
 
               for spec in $(specsPath)/repos/*.yaml; do
                 [ -f "$spec" ] || continue
                 echo "Validating: $spec"
                 ./owlctl repo apply "$spec" --dry-run
-                if [ $? -ne 0 ] && [ $? -ne 6 ]; then FAILED=$((FAILED + 1)); fi
+                rc=$?
+                if [ $rc -ne 0 ] && [ $rc -ne 6 ]; then FAILED=$((FAILED + 1)); fi
               done
 
               for spec in $(specsPath)/sobrs/*.yaml; do
                 [ -f "$spec" ] || continue
                 echo "Validating: $spec"
                 ./owlctl repo sobr-apply "$spec" --dry-run
-                if [ $? -ne 0 ] && [ $? -ne 6 ]; then FAILED=$((FAILED + 1)); fi
+                rc=$?
+                if [ $rc -ne 0 ] && [ $rc -ne 6 ]; then FAILED=$((FAILED + 1)); fi
               done
 
               for spec in $(specsPath)/kms/*.yaml; do
                 [ -f "$spec" ] || continue
                 echo "Validating: $spec"
                 ./owlctl encryption kms-apply "$spec" --dry-run
-                if [ $? -ne 0 ] && [ $? -ne 6 ]; then FAILED=$((FAILED + 1)); fi
+                rc=$?
+                if [ $rc -ne 0 ] && [ $rc -ne 6 ]; then FAILED=$((FAILED + 1)); fi
               done
 
               if [ $FAILED -gt 0 ]; then
@@ -130,11 +132,11 @@ stages:
               steps:
                 - checkout: self
 
+                - template: templates/install-owlctl.yml
+
                 - script: |
-                    curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-                    chmod +x owlctl
                     ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-                  displayName: 'Install and authenticate owlctl'
+                  displayName: 'Authenticate owlctl'
                   env:
                     OWLCTL_USERNAME: $(OWLCTL_USERNAME)
                     OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
@@ -235,11 +237,11 @@ stages:
       - job: Verify
         displayName: 'Verify configuration applied'
         steps:
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)

@@ -30,8 +30,6 @@ pool:
 
 variables:
   - group: 'veeam-credentials'
-  - name: owlctlVersion
-    value: 'latest'
 
 stages:
   # Stage 1: Validate changed spec files with dry-run
@@ -44,11 +42,11 @@ stages:
           - checkout: self
             fetchDepth: 0  # Full history for git diff
 
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
@@ -130,11 +128,11 @@ stages:
       - job: CheckDrift
         displayName: 'Verify no unexpected drift'
         steps:
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)

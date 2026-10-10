@@ -27,8 +27,6 @@ pool:
 
 variables:
   - group: 'veeam-credentials'
-  - name: owlctlVersion
-    value: 'latest'
   - name: specsPath
     value: 'infrastructure'
 
@@ -40,11 +38,11 @@ stages:
       - job: DriftScan
         displayName: 'Scan all resources'
         steps:
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
@@ -122,11 +120,11 @@ stages:
         steps:
           - checkout: self
 
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
@@ -229,11 +227,11 @@ stages:
       - job: VerifyClean
         displayName: 'Verify no remaining drift'
         steps:
+          - template: templates/install-owlctl.yml
+
           - script: |
-              curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-              chmod +x owlctl
               ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-            displayName: 'Install and authenticate owlctl'
+            displayName: 'Authenticate owlctl'
             env:
               OWLCTL_USERNAME: $(OWLCTL_USERNAME)
               OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)

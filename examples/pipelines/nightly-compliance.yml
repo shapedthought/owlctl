@@ -27,8 +27,6 @@ pool:
 
 variables:
   - group: 'veeam-credentials'
-  - name: owlctlVersion
-    value: 'latest'
   # Set to true to update wiki (requires wiki to exist)
   - name: updateWiki
     value: 'false'
@@ -39,11 +37,11 @@ jobs:
   - job: GenerateReport
     displayName: 'Generate Compliance Report'
     steps:
+      - template: templates/install-owlctl.yml
+
       - script: |
-          curl -sL https://github.com/shapedthought/owlctl/releases/download/$(owlctlVersion)/owlctl-linux-amd64 -o owlctl
-          chmod +x owlctl
           ./owlctl init && ./owlctl profile --set vbr && ./owlctl login
-        displayName: 'Install and authenticate owlctl'
+        displayName: 'Authenticate owlctl'
         env:
           OWLCTL_USERNAME: $(OWLCTL_USERNAME)
           OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
