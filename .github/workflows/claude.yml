@@ -71,7 +71,7 @@ jobs:
           additional_permissions: |
             actions: read
           claude_args: |
-            --max-turns 50
+            --max-turns 80
             --append-system-prompt "Before doing anything, read .github/claude/WRITER.md and follow it. Never read or implement from planning/."
             --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,LS,Bash(go build:*),Bash(go test:*),Bash(go vet:*),Bash(gofmt:*),Bash(go list:*),Bash(go doc:*),Bash(go env:*),Bash(go mod tidy:*),Bash(go mod download:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(wc:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git commit:*),Bash(git push:*),mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log"
             --disallowedTools "WebFetch,WebSearch"
