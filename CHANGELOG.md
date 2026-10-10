@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `examples/pipelines/templates/install-owlctl.yml` now defaults `owlctlVersion` to `v1.3.0` (#170)
+
 ## [1.3.0] - 2026-10-10
 
 Non-breaking minor release covering everything on `master` since v1.2.2. The old forms of `owlctl export <job-id>` and `-o` for `--overlay` keep working for this release with a deprecation warning on stderr.
