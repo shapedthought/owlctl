@@ -493,6 +493,10 @@ vim state.json
 **Moving to a new environment:**
 ```bash
 # 1. Export state from old environment
+#    If you're upgrading and still have a legacy ~/.owlctl/state.json, run
+#    `owlctl state migrate` first: `state path` prints the new location, which
+#    doesn't exist until the legacy file has been migrated.
+owlctl state migrate        # only needed for a legacy ~/.owlctl/state.json
 cp "$(owlctl state path)" state-old-env.json
 
 # 2. Set up new environment
