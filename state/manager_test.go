@@ -41,9 +41,8 @@ func TestNewManagerFallsBackWithoutEnv(t *testing.T) {
 	t.Setenv("OWLCTL_SETTINGS_PATH", "")
 
 	m := NewManager()
-	// Should contain state.json in some path (either ~/.owlctl/ or current dir)
-	if filepath.Base(m.GetStatePath()) != "state.json" {
-		t.Errorf("Expected state path ending in state.json, got %s", m.GetStatePath())
+	if m.GetStatePath() != "state.json" {
+		t.Errorf("Expected state path state.json (current dir), got %s", m.GetStatePath())
 	}
 }
 

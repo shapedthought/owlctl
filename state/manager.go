@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
+	"sync"
+
+	"github.com/shapedthought/owlctl/internal/paths"
 )
 
 // Manager handles state file operations
@@ -13,30 +15,49 @@ type Manager struct {
 	statePath string
 }
 
-// NewManager creates a new state manager
-// Uses OWLCTL_SETTINGS_PATH if set, otherwise ~/.owlctl/
+var legacyWarnOnce sync.Once
+
+// NewManager creates a new state manager.
+// The state file lives next to settings.json: OWLCTL_SETTINGS_PATH if set,
+// otherwise the current directory. It creates no directories (Save does).
+// If only a legacy ~/.owlctl/state.json exists, a warning is printed to stderr.
 func NewManager() *Manager {
-	var statePath string
-
-	settingsPath := os.Getenv("OWLCTL_SETTINGS_PATH")
-	if settingsPath != "" {
-		statePath = filepath.Join(settingsPath, "state.json")
-	} else {
-		usr, err := user.Current()
-		if err != nil {
-			// Fallback to current directory if we can't get home dir
-			statePath = "state.json"
-		} else {
-			owlctlDir := filepath.Join(usr.HomeDir, ".owlctl")
-			// Create .owlctl directory if it doesn't exist
-			os.MkdirAll(owlctlDir, 0755)
-			statePath = filepath.Join(owlctlDir, "state.json")
-		}
+	m := NewManagerQuiet()
+	if legacy := m.LegacyStatePath(); legacy != "" {
+		legacyWarnOnce.Do(func() {
+			fmt.Fprintf(os.Stderr, "Warning: found legacy state at %s, but owlctl now uses %s. State is NOT moved automatically. Run 'owlctl state migrate' to move it, or set OWLCTL_SETTINGS_PATH=%s to keep using it.\n",
+				legacy, absPath(m.statePath), filepath.Dir(legacy))
+		})
 	}
+	return m
+}
 
-	return &Manager{
-		statePath: statePath,
+// NewManagerQuiet is NewManager without the legacy-state warning.
+func NewManagerQuiet() *Manager {
+	return &Manager{statePath: paths.File("state.json")}
+}
+
+// LegacyStatePath returns the absolute legacy ~/.owlctl/state.json path when it
+// exists and the current state file does not; otherwise "".
+func (m *Manager) LegacyStatePath() string {
+	legacy := paths.LegacyStatePath()
+	if legacy == "" || absPath(legacy) == absPath(m.statePath) {
+		return ""
 	}
+	if _, err := os.Stat(m.statePath); err == nil {
+		return ""
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		return ""
+	}
+	return legacy
+}
+
+func absPath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
 }
 
 // activeInstance returns the currently active instance name.
@@ -61,18 +82,7 @@ func activeProduct() string {
 // importing the utils package (which would create a circular dependency).
 // Returns empty string if the file cannot be found, read, or parsed.
 func selectedProfileFromSettings() string {
-	settingsPath := os.Getenv("OWLCTL_SETTINGS_PATH")
-	var settingsFile string
-	if settingsPath != "" {
-		settingsFile = filepath.Join(settingsPath, "settings.json")
-	} else {
-		usr, err := user.Current()
-		if err != nil {
-			return ""
-		}
-		settingsFile = filepath.Join(usr.HomeDir, ".owlctl", "settings.json")
-	}
-	data, err := os.ReadFile(settingsFile)
+	data, err := os.ReadFile(paths.File("settings.json"))
 	if err != nil {
 		return ""
 	}

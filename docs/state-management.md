@@ -39,7 +39,7 @@ State is owlctl's record of the last known configuration for each managed resour
 
 ## State File Location
 
-By default, `state.json` is written to `~/.owlctl/state.json`. Run `owlctl state path` to print the exact location. To keep state under version control with your specs, set `OWLCTL_SETTINGS_PATH` to your project directory:
+`state.json` lives next to `settings.json` and `profiles.json`: in `OWLCTL_SETTINGS_PATH` if set, otherwise the **current directory**. Run `owlctl state path` to print the exact location. To pin it to a project directory regardless of where you run owlctl, set `OWLCTL_SETTINGS_PATH`:
 
 ```bash
 # Keep config + state with the project
@@ -49,7 +49,16 @@ export OWLCTL_SETTINGS_PATH="$(pwd)/.owlctl/"
 # <project>/.owlctl/state.json
 ```
 
-**Important:** `OWLCTL_SETTINGS_PATH` controls where `settings.json`, `profiles.json`, and `state.json` all live, keeping them together. (With the variable unset, `state.json` defaults to `~/.owlctl/` while the other files default to the current directory, so set it explicitly for predictable, committable state.)
+**Important:** `OWLCTL_SETTINGS_PATH` controls where `settings.json`, `profiles.json`, and `state.json` all live, keeping them together. With it unset, all of them resolve to the current directory.
+
+**Upgrading from earlier versions:** older releases defaulted state to `~/.owlctl/state.json` when the variable was unset. If owlctl finds that file and none at the new location, it prints a warning naming both paths. State is never moved automatically. Move it with:
+
+```bash
+owlctl state migrate --dry-run   # preview
+owlctl state migrate             # back up, then move to the current state path
+```
+
+`migrate` validates the source, writes `state.json.bak-<UTC timestamp>` next to it, then moves it. It refuses to overwrite an existing destination unless `--force` is given (the destination is backed up first). Use `--from`/`--to` for other paths. Alternatively, set `OWLCTL_SETTINGS_PATH=$HOME/.owlctl` to keep using the old location.
 
 ## State File Format
 

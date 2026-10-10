@@ -42,6 +42,9 @@ variables:
     value: 'latest'
   - name: specsPath
     value: 'infrastructure'
+  # Keep state.json in the repo checkout so `git add state.json` commits it
+  - name: OWLCTL_SETTINGS_PATH
+    value: '$(Build.SourcesDirectory)'
 
 stages:
   # ============================================================
