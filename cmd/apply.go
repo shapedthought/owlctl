@@ -56,6 +56,7 @@ Overlay Resolution:
 `,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		warnDeprecatedOverlayShorthand(os.Args[1:])
 		if groupName != "" {
 			// Validate mutual exclusivity
 			if len(args) > 0 {
@@ -469,7 +470,7 @@ func applyVBRJob(spec resources.ResourceSpec, profile models.Profile) error {
 }
 
 func init() {
-	applyCmd.Flags().StringVar(&overlayFile, "overlay", "", "Overlay file to merge with base configuration")
+	applyCmd.Flags().StringVarP(&overlayFile, "overlay", "o", "", "Overlay file to merge with base configuration")
 	applyCmd.Flags().StringVar(&environment, "env", "", "Environment to use (looks up overlay from owlctl.yaml)")
 	applyCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without applying them")
 	applyCmd.Flags().StringVar(&groupName, "group", "", "Apply all specs in named group (from owlctl.yaml)")

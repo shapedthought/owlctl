@@ -23,6 +23,10 @@ var (
 	globalExportFromState    bool
 )
 
+// deprecatedExportWarning is printed to stderr when the root 'export' command is
+// used with a job ID. Remove the alias in the next minor release.
+const deprecatedExportWarning = "Warning: 'owlctl export <id>' is deprecated and will be removed in a future release; use 'owlctl job export <id>'."
+
 var globalExportCmd = &cobra.Command{
 	Use:   "export",
 	Short: "Export all resource types to declarative YAML",
@@ -63,7 +67,18 @@ Examples:
   # Export from state (offline, no server required)
   owlctl export --all --from-state -d ./exports
 `,
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 1 && !globalExportAll {
+			// Deprecated v1.2.x form: 'owlctl export <job-id>'. Same behaviour as
+			// 'owlctl job export <job-id>'; only the stderr warning differs.
+			fmt.Fprintln(os.Stderr, deprecatedExportWarning)
+			exportCmd.Run(cmd, args)
+			return
+		}
+		if len(args) > 0 {
+			log.Fatal("Cannot combine a job ID with --all. To export a single job use 'owlctl job export <id>'.")
+		}
 		if !globalExportAll {
 			log.Fatal("Use --all to export all resource types. To export a single job use 'owlctl job export <id>'.")
 		}
@@ -297,5 +312,10 @@ func init() {
 	globalExportCmd.Flags().StringVarP(&globalExportDir, "dir", "d", "", "Output directory (default: ./exports)")
 	globalExportCmd.Flags().BoolVar(&globalExportAllInstances, "all-instances", false, "Export all configured instances from owlctl.yaml")
 	globalExportCmd.Flags().BoolVar(&globalExportFromState, "from-state", false, "Export from state.json instead of live API (offline)")
+	// Flags for the deprecated 'owlctl export <job-id>' alias (shared with 'job export').
+	globalExportCmd.Flags().StringVarP(&exportOutput, "output", "o", "", "Output file for deprecated 'export <job-id>' (default: stdout)")
+	globalExportCmd.Flags().BoolVar(&exportSimplified, "simplified", false, "Deprecated 'export <job-id>' only: export simplified format (legacy)")
+	globalExportCmd.Flags().BoolVar(&exportAsOverlay, "as-overlay", false, "Deprecated 'export <job-id>' only: export as overlay (minimal patch)")
+	globalExportCmd.Flags().StringVar(&exportBasePath, "base", "", "Deprecated 'export <job-id>' only: base template to diff against")
 	rootCmd.AddCommand(globalExportCmd)
 }
