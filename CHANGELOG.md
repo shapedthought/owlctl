@@ -23,9 +23,8 @@ Non-breaking minor release covering everything on `master` since v1.2.2. The old
 - Auth token storage tests (#148)
 - Docs overhaul: getting started, tutorial, declarative mode, state management, command reference (#154, #155, #158, #159, #160, #162)
 - `owlctl state migrate` moves a legacy `~/.owlctl/state.json` to the current state location, with validation, a timestamped backup, `--dry-run`, `--force`, `--from`/`--to` (#156)
-
 - `examples/pipelines/templates/install-owlctl.yml`: shared Azure DevOps install step with an `owlctlVersion` parameter (default is the explicit release tag `v1.2.2`, defined only there; bump it during release prep). Handles `latest` vs tag URLs, downloads the `.tar.gz` and `.sha256`, verifies the checksum (building the `<hash>  <file>` line itself, since release `.sha256` files contain only the hash), extracts, and smoke-tests with `./owlctl --help` (#166)
-- `scripts/check-release-urls.sh` fails on any 404 among owlctl release asset URLs (`.tar.gz`/`.zip`/`.sha256`; bare base URLs are skipped) in `docs/` and `examples/` (and the template's URLs). It is not yet wired into a workflow; adding it to CI needs a change under `.github/workflows` (#166)
+- `scripts/check-release-urls.sh` fails on any 404 among owlctl release asset URLs (`.tar.gz`/`.zip`/`.sha256`; bare base URLs are skipped) in `docs/` and `examples/` (and the template's URLs). It runs in CI via `.github/workflows/release-urls.yml` on PRs that touch `docs/` or `examples/` (#166, #178)
 
 ### Changed
 - **`owlctl export --all` now exports every resource type** (one folder per type) instead of only jobs. Use `owlctl job export --all` for the old jobs-only behaviour (#146, #162)
@@ -38,14 +37,12 @@ Non-breaking minor release covering everything on `master` since v1.2.2. The old
 - Read-only commands (`diff`, `state list/show/history`) fall back to a legacy `~/.owlctl/state.json` when no state exists at the resolved path, so drift checks never pass silently. Writes go only to the resolved path; the legacy file is never modified (#156)
 - `owlctl state migrate` rejects sources that are not owlctl state (version 1-4 structure) and leaves them untouched (#156)
 - `examples/pipelines/gitops-deploy.yml` sets `OWLCTL_SETTINGS_PATH` so `git add state.json` commits state (#156)
+- Note: `config-backup` is not yet included in `export --all` / `snapshot --all` (#163)
 
 ### Deprecated
 - `owlctl export <job-id>` (with `-o`, `--as-overlay`, `--base`) is a deprecated alias of `owlctl job export <job-id>`. It behaves identically, prints `Warning: 'owlctl export <id>' is deprecated and will be removed in a future release; use 'owlctl job export <id>'.` to stderr, and will be removed in the next minor release. `export --all` is unaffected by the alias (see Changed)
 - `-o` as shorthand for `--overlay` on `job apply` and `job plan` prints `Warning: -o for --overlay is deprecated; use --overlay.` to stderr and will be removed in the next minor release. It was not carried over to the newer repo/SOBR/KMS/config-backup `--overlay` flags
-- `--target` (use `--instance`)
-
-### Known gaps
-- `config-backup` is not included in `export --all` / `snapshot --all` (#163)
+- `--target` remains deprecated (use `--instance`); this is not new in 1.3.0
 
 ### Fixed
 - `examples/pipelines/deployment.yml` dry-run validation never tolerated exit code 6 because `$?` was re-read after the first test; the exit code is now captured once (#166)

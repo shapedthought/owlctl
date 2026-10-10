@@ -54,6 +54,9 @@ Output structure:
 Use --all-instances to export all instances defined in owlctl.yaml.
 Use --from-state to generate YAML from state.json without contacting the VBR server.
 
+The -o/--output, --as-overlay, --base and --simplified flags apply only to the
+deprecated single-job form 'owlctl export <job-id>' and are ignored with --all.
+
 Examples:
   # Export all resources for the active instance
   owlctl export --all
