@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fail if any owlctl release download URL referenced in docs/ or examples/ returns an HTTP error.
 # Also checks the URLs the install template builds for 'latest' and for its default tag.
+# Only URLs ending in an asset name (.tar.gz, .zip, .sha256) are checked; bare base URLs are skipped.
 # Migration guides are skipped: they intentionally reference old releases.
 set -euo pipefail
 
@@ -24,7 +25,7 @@ urls=$(
     echo "$BASE/latest/download/$ASSET.sha256"
     echo "$BASE/download/$default_tag/$ASSET"
     echo "$BASE/download/$default_tag/$ASSET.sha256"
-  } | grep -vE '[$\{]' | sort -u
+  } | grep -vE '[$\{]' | grep -E '\.(tar\.gz|zip|sha256)$' | sort -u
 )
 
 fail=0

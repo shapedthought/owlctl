@@ -24,9 +24,11 @@ See the [pipeline README](../examples/pipelines/README.md) for setup instruction
 Every pipeline installs owlctl with the shared step template
 [`install-owlctl.yml`](../examples/pipelines/templates/install-owlctl.yml). It downloads the
 release `.tar.gz` and its `.sha256`, verifies the checksum, extracts the binary and runs
-`./owlctl --help` as a smoke test. Copy the template into your repo and pin `owlctlVersion`
-to a release tag; the snippets below reference it as
-`examples/pipelines/templates/install-owlctl.yml`, so adjust the path to match where you put it.
+`./owlctl --help` as a smoke test. Pin `owlctlVersion` to a release tag.
+
+> **Note:** copy `examples/pipelines/templates/install-owlctl.yml` into your repo and adjust the
+> `template:` path relative to your pipeline file. The snippets below use
+> `examples/pipelines/templates/install-owlctl.yml`, which only works if you copy it to that exact path.
 
 ### What Works Today
 

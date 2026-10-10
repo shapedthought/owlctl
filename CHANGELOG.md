@@ -10,11 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `owlctl state migrate` moves a legacy `~/.owlctl/state.json` to the current state location, with validation, a timestamped backup, `--dry-run`, `--force`, `--from`/`--to` (#156)
 
-- `examples/pipelines/templates/install-owlctl.yml`: shared Azure DevOps install step with an `owlctlVersion` parameter (default is an explicit release tag, defined only there). Handles `latest` vs tag URLs, downloads the `.tar.gz` and `.sha256`, verifies the checksum, extracts, and smoke-tests with `./owlctl --help` (#166)
-- `scripts/check-release-urls.sh` fails on any 404 among owlctl release URLs in `docs/` and `examples/` (and the template's URLs). It is not yet wired into a workflow; adding it to CI needs a change under `.github/workflows` (#166)
+- `examples/pipelines/templates/install-owlctl.yml`: shared Azure DevOps install step with an `owlctlVersion` parameter (default is the explicit release tag `v1.2.2`, defined only there; bump it during release prep). Handles `latest` vs tag URLs, downloads the `.tar.gz` and `.sha256`, verifies the checksum (building the `<hash>  <file>` line itself, since release `.sha256` files contain only the hash), extracts, and smoke-tests with `./owlctl --help` (#166)
+- `scripts/check-release-urls.sh` fails on any 404 among owlctl release asset URLs (`.tar.gz`/`.zip`/`.sha256`; bare base URLs are skipped) in `docs/` and `examples/` (and the template's URLs). It is not yet wired into a workflow; adding it to CI needs a change under `.github/workflows` (#166)
 
 ### Changed
 - All `examples/pipelines/*.yml` install owlctl through the shared template instead of an inline `curl` of a non-existent bare `owlctl-linux-amd64` asset (#166)
+- The GitHub Actions example in `docs/gitops-workflows.md` now verifies the checksum with a valid `<hash>  <file>` line (#166)
 - Docs and examples download the real `.tar.gz` (and Windows `.zip`) release assets; the Azure DevOps guide drops the `v0.12.1-beta1` pins and the "Current Integration (v0.12.1)" heading (#166)
 - The default state location now follows settings: with `OWLCTL_SETTINGS_PATH` unset, `state.json` resolves to the current directory next to `settings.json` instead of `~/.owlctl/`. A legacy `~/.owlctl/state.json` is detected and warned about, and moved only by `owlctl state migrate` (#156)
 - `owlctl state path` prints only the absolute resolved path on stdout; the legacy-state note goes to stderr so `$(owlctl state path)` is script-safe (#156)

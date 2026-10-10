@@ -347,7 +347,8 @@ jobs:
       - name: Verify owlctl checksum
         run: |
           curl -sL https://github.com/shapedthought/owlctl/releases/latest/download/owlctl-linux-amd64.tar.gz.sha256 -o owlctl.tar.gz.sha256
-          sha256sum -c owlctl.tar.gz.sha256
+          # the release .sha256 holds only the hash, so supply the filename ourselves
+          echo "$(awk '{print $1}' owlctl.tar.gz.sha256)  owlctl.tar.gz" | sha256sum -c -
 
       - name: Configure owlctl
         env:
