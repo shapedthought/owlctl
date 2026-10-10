@@ -7,13 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- `owlctl state migrate` moves a legacy `~/.owlctl/state.json` to the current state location, with validation, a timestamped backup, `--dry-run`, `--force`, `--from`/`--to` (#156)
+## [1.3.0] - UNRELEASED
 
+Non-breaking minor release covering everything on `master` since v1.2.2. The old forms of `owlctl export <job-id>` and `-o` for `--overlay` keep working for this release with a deprecation warning on stderr.
+
+### Added
+- `owlctl config-backup` singleton resource: `snapshot`, `diff`, `export`, `apply` (#149)
+- State format v4, scoped per instance (`instances["<name>"].resources`); v1-v3 files are migrated automatically on first load (#151)
+- `owlctl context list/use/current`, kubectl-style aliases over named instances (#153)
+- `owlctl state list/show/path` inspection commands (#153)
+- Global `owlctl export --all` and `owlctl snapshot --all` across all resource types, with `--all-instances` and `export --from-state` (#152, #162)
+- `owlctl instance add/remove/set/get/unset` for managing instances in `owlctl.yaml` (#162)
+- `--overlay` on `repo apply`, `repo sobr-apply`, and `encryption kms-apply` (#146)
+- `owlctl job export <id>` as the preferred home of single-job export (#146)
+- Auth token storage tests (#148)
+- Docs overhaul: getting started, tutorial, declarative mode, state management, command reference (#154, #155, #158, #159, #160, #162)
+- `owlctl state migrate` moves a legacy `~/.owlctl/state.json` to the current state location, with validation, a timestamped backup, `--dry-run`, `--force`, `--from`/`--to` (#156)
 - `examples/pipelines/templates/install-owlctl.yml`: shared Azure DevOps install step with an `owlctlVersion` parameter (default is the explicit release tag `v1.2.2`, defined only there; bump it during release prep). Handles `latest` vs tag URLs, downloads the `.tar.gz` and `.sha256`, verifies the checksum (building the `<hash>  <file>` line itself, since release `.sha256` files contain only the hash), extracts, and smoke-tests with `./owlctl --help` (#166)
-- `scripts/check-release-urls.sh` fails on any 404 among owlctl release asset URLs (`.tar.gz`/`.zip`/`.sha256`; bare base URLs are skipped) in `docs/` and `examples/` (and the template's URLs). It is not yet wired into a workflow; adding it to CI needs a change under `.github/workflows` (#166)
+- `scripts/check-release-urls.sh` fails on any 404 among owlctl release asset URLs (`.tar.gz`/`.zip`/`.sha256`; bare base URLs are skipped) in `docs/` and `examples/` (and the template's URLs). It runs in CI via `.github/workflows/release-urls.yml` on PRs that touch `docs/` or `examples/` (#166, #178)
 
 ### Changed
+- **`owlctl export --all` now exports every resource type** (one folder per type) instead of only jobs. Use `owlctl job export --all` for the old jobs-only behaviour (#146, #162)
+- CLI consistency pass: single-job export, apply, and overlay flags follow the same shape across jobs, repos, SOBRs, and KMS servers (#146)
 - All `examples/pipelines/*.yml` install owlctl through the shared template instead of an inline `curl` of a non-existent bare `owlctl-linux-amd64` asset (#166)
 - The GitHub Actions example in `docs/gitops-workflows.md` now verifies the checksum with a valid `<hash>  <file>` line (#166)
 - Docs and examples download the real `.tar.gz` (and Windows `.zip`) release assets; the Azure DevOps guide drops the `v0.12.1-beta1` pins and the "Current Integration (v0.12.1)" heading (#166)
@@ -22,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Read-only commands (`diff`, `state list/show/history`) fall back to a legacy `~/.owlctl/state.json` when no state exists at the resolved path, so drift checks never pass silently. Writes go only to the resolved path; the legacy file is never modified (#156)
 - `owlctl state migrate` rejects sources that are not owlctl state (version 1-4 structure) and leaves them untouched (#156)
 - `examples/pipelines/gitops-deploy.yml` sets `OWLCTL_SETTINGS_PATH` so `git add state.json` commits state (#156)
+- Note: `config-backup` is not yet included in `export --all` / `snapshot --all` (#163)
+
+### Deprecated
+- `owlctl export <job-id>` (with `-o`, `--as-overlay`, `--base`) is a deprecated alias of `owlctl job export <job-id>`. It behaves identically, prints `Warning: 'owlctl export <id>' is deprecated and will be removed in a future release; use 'owlctl job export <id>'.` to stderr, and will be removed in the next minor release. `export --all` is unaffected by the alias (see Changed)
+- `-o` as shorthand for `--overlay` on `job apply` and `job plan` prints `Warning: -o for --overlay is deprecated; use --overlay.` to stderr and will be removed in the next minor release. It was not carried over to the newer repo/SOBR/KMS/config-backup `--overlay` flags
+- `--target` remains deprecated (use `--instance`); this is not new in 1.3.0
 
 ### Fixed
 - `examples/pipelines/deployment.yml` dry-run validation never tolerated exit code 6 because `$?` was re-read after the first test; the exit code is now captured once (#166)

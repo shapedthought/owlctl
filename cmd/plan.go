@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/shapedthought/owlctl/config"
@@ -48,6 +49,7 @@ against current VBR state. Full drift detection will be available in Phase 2.
 `,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		warnDeprecatedOverlayShorthand(os.Args[1:])
 		planJob(args[0])
 	},
 }
@@ -394,7 +396,7 @@ func printPlanDrift(drift Drift) {
 }
 
 func init() {
-	planCmd.Flags().StringVar(&planOverlayFile, "overlay", "", "Overlay file to merge with base configuration")
+	planCmd.Flags().StringVarP(&planOverlayFile, "overlay", "o", "", "Overlay file to merge with base configuration")
 	planCmd.Flags().StringVar(&planEnvironment, "env", "", "Environment to use (looks up overlay from owlctl.yaml)")
 	planCmd.Flags().BoolVar(&planShowYAML, "show-yaml", false, "Display full merged YAML configuration")
 
