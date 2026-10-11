@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- README changelog table now includes 1.2.1, 1.2.2 and 1.3.0 and links to `CHANGELOG.md` as the full record (#183)
 - `examples/pipelines/templates/install-owlctl.yml` now defaults `owlctlVersion` to `v1.3.0` (#170)
+- New `CONTRIBUTING.md` with a **Releasing** checklist, including updating the README changelog table (#183)
 
 ## [1.3.0] - 2026-10-10
 
