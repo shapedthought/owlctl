@@ -241,6 +241,8 @@ If you have any issues or would like to see a feature added please raise an issu
 
 ### Change Log 🪵
 
+This table is a summary. [`CHANGELOG.md`](CHANGELOG.md) is the full record.
+
 | Version     | Changes                                                             |
 | ----------- | ------------------------------------------------------------------- |
 | 0.1.0-beta1 | First beta                                                          |
@@ -259,3 +261,6 @@ If you have any issues or would like to see a feature added please raise an issu
 | 1.0.0 | **Rebrand: vcli → owlctl**. Renamed binary, env vars (`VCLI_*` → `OWLCTL_*`), config dir (`~/.owlctl`), API version string. First stable release. See [Migration Guide](docs/migration-vcli-to-owlctl.md). |
 | 1.1.0 | **Groups, Targets & Profiles** (Epic #96). Group-based batch apply/diff with `--group`, `kind: Profile` and `kind: Overlay` for standardised policy management, named VBR targets with `--target`, extended `--group` to repos/SOBRs/KMS. |
 | 1.2.0 | **Multi-Instance & Generic Pipeline**. Named instances with `--instance` for multi-server automation, YAML export for repos/SOBRs/encryption/KMS, generic map-based job pipeline for all job types, improved API error messages, Windows auth fix. |
+| 1.2.1 | **Apply Fix**. `repo apply`, `repo sobr-apply` and `encryption kms-apply` no longer fail with HTTP 400 "'Id' must not be empty"; the `id` is now injected in the generic apply path. |
+| 1.2.2 | **Numeric Comparison Fix**. Apply commands no longer report false changes for numeric fields with identical values (e.g. `retryCount: 3 -> 3`). |
+| 1.3.0 | **CLI Consistency, Context & State Tooling**. `owlctl export <job-id>` is now `owlctl job export <job-id>`, and `-o` for `--overlay` is replaced by `--overlay`; the old forms still work with a deprecation warning for this release and will be removed in the next minor release. `export --all` now exports every resource type (use `job export --all` for jobs only). Adds `config-backup`, state format v4 (per instance), `context` and `state list/show/path` commands, `snapshot --all`, `instance add/remove/set/get/unset`, `state migrate`, and `--overlay` on `repo apply`, `repo sobr-apply` and `encryption kms-apply`. `state.json` now defaults next to `settings.json`. |
