@@ -147,7 +147,7 @@ func applyJob(configFile string) {
 			fmt.Println("⚠ Job not found in VBR - will be created")
 			fmt.Println()
 			showNewJobSummary(finalSpec)
-			if plan := plannedJobState(finalSpec.Spec, nil); plan != "" {
+			if plan := plannedJobStateForDryRun(finalSpec.Spec, nil); plan != "" {
 				fmt.Printf("\nWould call: %s\n", plan)
 			}
 		} else {
@@ -160,7 +160,7 @@ func applyJob(configFile string) {
 				log.Fatalf("Failed to unmarshal current job: %v", err)
 			}
 			showJobDiff(finalSpec, currentMap)
-			if plan := plannedJobState(finalSpec.Spec, currentMap); plan != "" {
+			if plan := plannedJobStateForDryRun(finalSpec.Spec, currentMap); plan != "" {
 				fmt.Printf("\nWould call: %s\n", plan)
 			}
 		}
@@ -305,7 +305,7 @@ func applyGroup(group string) {
 					continue
 				}
 			}
-			if plan := plannedJobState(mergedSpec.Spec, existingMap); plan != "" {
+			if plan := plannedJobStateForDryRun(mergedSpec.Spec, existingMap); plan != "" {
 				fmt.Printf("  Would call: %s\n", plan)
 			}
 			fmt.Println()

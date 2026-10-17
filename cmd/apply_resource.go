@@ -163,7 +163,7 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 			// Dry-run mode: show what would be created
 			printDryRunCreate(spec.Metadata.Name, cfg.Kind, cleanedSpec)
 			result.Action = "would-create"
-			printPlannedPostApply(cfg, spec.Spec, nil)
+			printPlannedPostApply(cfg, postApplySpec(spec.Spec, remediationCfg, cfg.Kind, nil), nil)
 			return result
 		}
 
@@ -235,7 +235,7 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 			// Dry-run mode: show what would change (including skipped)
 			printDryRunUpdateWithSkipped(spec.Metadata.Name, cfg.Kind, result.Changes, result.Skipped)
 			result.Action = "would-update"
-			printPlannedPostApply(cfg, spec.Spec, existingMap)
+			printPlannedPostApply(cfg, postApplySpec(spec.Spec, remediationCfg, cfg.Kind, result.Skipped), existingMap)
 			return result
 		}
 
@@ -258,7 +258,7 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 	// written, so state is still recorded below; the error fails the apply.
 	var postApplyErr error
 	if cfg.PostApply != nil && !dryRun {
-		postApplyErr = cfg.PostApply(spec.Spec, result.ResourceID, profile)
+		postApplyErr = cfg.PostApply(postApplySpec(spec.Spec, remediationCfg, cfg.Kind, result.Skipped), result.ResourceID, profile)
 		if postApplyErr != nil {
 			fmt.Printf("Warning: %v\n", postApplyErr)
 		}
@@ -281,6 +281,36 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 
 	result.Error = postApplyErr
 	return result
+}
+
+// postApplySpec returns the spec handed to PostApply/PlanPostApply: a copy with
+// every top-level field removed that remediation policy skips for the kind, or
+// that apply reported as skipped. Post-apply actions (e.g. job enable/disable)
+// are separate API calls, so they must honour the same skip rules as the PUT.
+func postApplySpec(spec map[string]interface{}, remCfg *remediation.Config, kind string, skipped []SkippedField) map[string]interface{} {
+	out := make(map[string]interface{}, len(spec))
+	for k, v := range spec {
+		if remCfg != nil {
+			if policy, _ := remCfg.GetFieldPolicy(kind, k); policy == remediation.PolicySkip {
+				continue
+			}
+		}
+		out[k] = v
+	}
+	for _, sk := range skipped {
+		delete(out, sk.Path)
+	}
+	return out
+}
+
+// plannedJobStateForDryRun is the dry-run plan for a job's enable/disable call,
+// honouring remediation skip policy the same way a real apply does.
+func plannedJobStateForDryRun(spec, existing map[string]interface{}) string {
+	remCfg, err := remediation.LoadConfig()
+	if err != nil {
+		remCfg = nil
+	}
+	return plannedJobState(postApplySpec(spec, remCfg, jobApplyConfig.Kind, nil), existing)
 }
 
 // printPlannedPostApply prints the dry-run preview of the config's PostApply action.
