@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `owlctl job export` (and the deprecated top-level `export`) now accepts a job name as well as an id. Names match exactly and case-sensitively; no match exits non-zero with `job "<name>" not found`, and a name shared by several jobs exits non-zero listing the ids. A UUID-shaped argument is tried as an id first, then as a name (#188)
+- `owlctl --version` and an `owlctl version` subcommand (version, commit, build date, Go version). Values default to `dev`/`none`/`unknown` and are injected at build time with `-X github.com/shapedthought/owlctl/cmd.version`, `.commit` and `.date`, so releases no longer need a version-bump commit. `utils` → Check Version now compares against the injected version, reports a development build for `dev`, and no longer panics on an unexpected GitHub response such as a rate limit (#182)
 - `examples/pipelines/lab-verification/`: Azure DevOps example pipeline that verifies owlctl against a lab VBR (login, get, export, `job apply --dry-run` drift check, optional guarded apply cycle and backup run), with tests that parse the YAML and check for IPs and secrets (#167)
 - `owlctl export --all` and `owlctl snapshot --all` now include the configuration backup singleton: export writes `config-backup/configuration-backup.yaml`, and `export --from-state` maps `VBRConfigurationBackup` to `config-backup/` instead of `unknown/`. The export registry gains an `IsSingleton` flag; help text and docs no longer carry the "not included" caveats (#163)
 
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `owlctl job apply` now honours `isDisabled` on create and update: VBR ignores it on POST/PUT, so apply reads the job's actual state back and calls `POST jobs/{id}/disable` or `/enable` when it differs. If VBR refuses (for example HTTP 400 for unscheduled jobs), apply prints a warning with VBR's message and exits non-zero instead of reporting success. `--dry-run` shows the planned enable/disable call. The enable/disable call is skipped, in apply and in dry-run, when `isDisabled` is set to `skip` for jobs in `remediation-config.yaml` (#186)
 
 ### Changed
+- Removed the unused root flag `-t, --toggle` ("Help message for toggle"), a leftover from the Cobra scaffold (#182)
 - README changelog table now includes 1.2.1, 1.2.2 and 1.3.0 and links to `CHANGELOG.md` as the full record (#183)
 - `examples/pipelines/templates/install-owlctl.yml` now defaults `owlctlVersion` to `v1.3.0` (#170)
 - New `CONTRIBUTING.md` with a **Releasing** checklist, including updating the README changelog table (#183)
