@@ -443,6 +443,8 @@ func prepareJobPayload(spec, existing map[string]interface{}) (map[string]interf
 			if !hasCredsType && !hasCreds {
 				gc["useAgentManagementCredentials"] = true
 			}
+
+			cleanCredentialsPerMachine(gc, existingCredentialsPerMachine(existing))
 		}
 	}
 
@@ -467,6 +469,49 @@ func prepareJobPayload(spec, existing map[string]interface{}) (map[string]interf
 	}
 
 	return spec, nil
+}
+
+// stripNilElements returns list without nil elements.
+func stripNilElements(list []interface{}) []interface{} {
+	out := make([]interface{}, 0, len(list))
+	for _, v := range list {
+		if v != nil {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// existingCredentialsPerMachine returns the live job's non-empty
+// guestProcessing.guestCredentials.credentialsPerMachine, or nil.
+func existingCredentialsPerMachine(existing map[string]interface{}) []interface{} {
+	gp, _ := existing["guestProcessing"].(map[string]interface{})
+	gc, _ := gp["guestCredentials"].(map[string]interface{})
+	list, _ := gc["credentialsPerMachine"].([]interface{})
+	if list = stripNilElements(list); len(list) == 0 {
+		return nil
+	}
+	return list
+}
+
+// cleanCredentialsPerMachine drops nil entries (from bare YAML "-" items) because
+// VBR rejects them with 400 "Credentials Per Machine must not be empty". If nothing
+// is left, it falls back to the live job's value, or omits the key. Never sends [].
+func cleanCredentialsPerMachine(gc map[string]interface{}, fallback []interface{}) {
+	raw, present := gc["credentialsPerMachine"]
+	if !present {
+		return
+	}
+	list, _ := raw.([]interface{})
+	if list = stripNilElements(list); len(list) > 0 {
+		gc["credentialsPerMachine"] = list
+		return
+	}
+	if len(fallback) > 0 {
+		gc["credentialsPerMachine"] = fallback
+		return
+	}
+	delete(gc, "credentialsPerMachine")
 }
 
 // applyVBRJob creates or updates a VBR job based on the specification.
