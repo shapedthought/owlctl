@@ -24,7 +24,10 @@ type vbrJobStateClient struct {
 }
 
 func (c vbrJobStateClient) IsDisabled(id string) (bool, error) {
-	raw := vhttp.GetData[json.RawMessage](fmt.Sprintf("jobs/%s", id), c.profile)
+	raw, err := vhttp.GetDataWithError[json.RawMessage](fmt.Sprintf("jobs/%s", id), c.profile)
+	if err != nil {
+		return false, err
+	}
 	var job map[string]interface{}
 	if err := json.Unmarshal(raw, &job); err != nil {
 		return false, fmt.Errorf("failed to parse job %s: %w", id, err)

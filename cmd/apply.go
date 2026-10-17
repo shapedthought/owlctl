@@ -297,6 +297,17 @@ func applyGroup(group string) {
 				fmt.Printf("  Found in VBR — would be updated\n")
 				result.Action = "would-update"
 			}
+			var existingMap map[string]interface{}
+			if existingRaw != nil {
+				if err := json.Unmarshal(existingRaw, &existingMap); err != nil {
+					result.Error = fmt.Errorf("failed to parse current job: %w", err)
+					results = append(results, result)
+					continue
+				}
+			}
+			if plan := plannedJobState(mergedSpec.Spec, existingMap); plan != "" {
+				fmt.Printf("  Would call: %s\n", plan)
+			}
 			fmt.Println()
 		} else {
 			// Apply the job
