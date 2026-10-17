@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/user"
+	"path/filepath"
 	"time"
 
 	"github.com/shapedthought/owlctl/models"
@@ -22,6 +23,15 @@ const configBackupStateKey = "ConfigurationBackup"
 
 // configBackupEndpoint is the VBR API endpoint for configuration backup settings.
 const configBackupEndpoint = "configBackup"
+
+// configBackupExportFile is the fixed file name written by 'export --all'.
+const configBackupExportFile = "configuration-backup.yaml"
+
+// fetchConfigBackup retrieves the live configuration backup settings. It is a
+// variable so tests can substitute a mock instead of calling VBR.
+var fetchConfigBackup = func(profile models.Profile) json.RawMessage {
+	return vhttp.GetData[json.RawMessage](configBackupEndpoint, profile)
+}
 
 var (
 	configBackupExportOutput string
@@ -80,7 +90,7 @@ func snapshotConfigBackup() {
 		log.Fatal("This command only works with VBR at the moment.")
 	}
 
-	rawData := vhttp.GetData[json.RawMessage](configBackupEndpoint, profile)
+	rawData := fetchConfigBackup(profile)
 
 	if err := saveConfigBackupToState(rawData); err != nil {
 		log.Fatalf("Failed to save configuration backup state: %v", err)
@@ -213,19 +223,12 @@ var configBackupExportCmd = &cobra.Command{
 	},
 }
 
-func exportConfigBackup() {
-	settings := utils.ReadSettings()
-	profile := utils.GetCurrentProfile()
-
-	if settings.SelectedProfile != "vbr" {
-		log.Fatal("This command only works with VBR at the moment.")
-	}
-
-	rawData := vhttp.GetData[json.RawMessage](configBackupEndpoint, profile)
-
+// buildConfigBackupYAML converts raw API data into the declarative YAML spec
+// (with runtime fields stripped) written by 'config-backup export'.
+func buildConfigBackupYAML(rawData json.RawMessage) ([]byte, error) {
 	var spec map[string]interface{}
 	if err := json.Unmarshal(rawData, &spec); err != nil {
-		log.Fatalf("Failed to parse configuration backup response: %v", err)
+		return nil, fmt.Errorf("failed to parse configuration backup response: %w", err)
 	}
 
 	// Strip runtime fields before export
@@ -246,10 +249,24 @@ func exportConfigBackup() {
 
 	yamlBytes, err := yaml.Marshal(resourceSpec)
 	if err != nil {
-		log.Fatalf("Failed to marshal to YAML: %v", err)
+		return nil, fmt.Errorf("failed to marshal to YAML: %w", err)
 	}
 
-	output := append([]byte(header), yamlBytes...)
+	return append([]byte(header), yamlBytes...), nil
+}
+
+func exportConfigBackup() {
+	settings := utils.ReadSettings()
+	profile := utils.GetCurrentProfile()
+
+	if settings.SelectedProfile != "vbr" {
+		log.Fatal("This command only works with VBR at the moment.")
+	}
+
+	output, err := buildConfigBackupYAML(fetchConfigBackup(profile))
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if configBackupExportOutput != "" {
 		if err := os.WriteFile(configBackupExportOutput, output, 0644); err != nil {
@@ -259,6 +276,34 @@ func exportConfigBackup() {
 	} else {
 		fmt.Print(string(output))
 	}
+}
+
+// exportConfigBackupToDir writes configuration-backup.yaml into outDir.
+// Registry-compatible: used by the global export command.
+func exportConfigBackupToDir(outDir string, profile models.Profile) error {
+	output, err := buildConfigBackupYAML(fetchConfigBackup(profile))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", outDir, err)
+	}
+	fp := filepath.Join(outDir, configBackupExportFile)
+	if err := os.WriteFile(fp, output, 0644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", fp, err)
+	}
+	fmt.Printf("  Exported %s\n", fp)
+	return nil
+}
+
+// snapshotConfigBackupForRegistry snapshots the configuration backup settings
+// into state. Registry-compatible: used by the global snapshot command.
+func snapshotConfigBackupForRegistry(profile models.Profile) error {
+	if err := saveConfigBackupToState(fetchConfigBackup(profile)); err != nil {
+		return fmt.Errorf("failed to save configuration backup state: %w", err)
+	}
+	fmt.Println("  Configuration backup settings snapshot saved.")
+	return nil
 }
 
 // ---- apply -------------------------------------------------------------------
