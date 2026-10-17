@@ -16,15 +16,17 @@ import (
 )
 
 var (
-	repoSnapshotAll    bool
-	repoDiffAll        bool
+	repoSnapshotAll      bool
+	repoDiffAll          bool
 	repoApplyDryRun      bool
+	repoApplyOutput      string
 	repoApplyGroupName   string
 	repoApplyOverlayFile string
 	repoDiffGroupName    string
 	sobrSnapshotAll      bool
 	sobrDiffAll          bool
 	sobrApplyDryRun      bool
+	sobrApplyOutput      string
 	sobrApplyGroupName   string
 	sobrApplyOverlayFile string
 	sobrDiffGroupName    string
@@ -381,6 +383,7 @@ var repoApplyConfig = ResourceApplyConfig{
 	IgnoreFields: repoIgnoreFields,
 	Mode:         ApplyUpdateOnly,
 	FetchCurrent: fetchCurrentRepo,
+	SeverityMap:  repoSeverityMap,
 }
 
 // fetchCurrentRepo retrieves a repository by name from VBR
@@ -428,6 +431,7 @@ Exit Codes:
 			if repoApplyOverlayFile != "" {
 				log.Fatal("Cannot use --group with --overlay (group defines its own overlay)")
 			}
+			rejectGroupJSONOutput(repoApplyOutput)
 			applyGroupResource(repoApplyGroupName, repoApplyConfig, repoApplyDryRun)
 		} else if len(args) > 0 {
 			settings := utils.ReadSettings()
@@ -437,7 +441,9 @@ Exit Codes:
 				log.Fatal("This command only works with VBR at the moment.")
 			}
 
-			result := applyWithOptionalOverlay(args[0], repoApplyOverlayFile, repoApplyConfig, profile, repoApplyDryRun)
+			result := applyWithDryRunOutput(repoApplyOutput, repoApplyDryRun, func() ApplyResult {
+				return applyWithOptionalOverlay(args[0], repoApplyOverlayFile, repoApplyConfig, profile, repoApplyDryRun)
+			})
 			if result.Error != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", result.Error)
 				outcome := DetermineApplyOutcome([]ApplyResult{result})
@@ -464,6 +470,7 @@ var sobrApplyConfig = ResourceApplyConfig{
 	IgnoreFields: sobrIgnoreFields,
 	Mode:         ApplyUpdateOnly,
 	FetchCurrent: fetchCurrentSobr,
+	SeverityMap:  sobrSeverityMap,
 }
 
 // fetchCurrentSobr retrieves a SOBR by name from VBR
@@ -511,6 +518,7 @@ Exit Codes:
 			if sobrApplyOverlayFile != "" {
 				log.Fatal("Cannot use --group with --overlay (group defines its own overlay)")
 			}
+			rejectGroupJSONOutput(sobrApplyOutput)
 			applyGroupResource(sobrApplyGroupName, sobrApplyConfig, sobrApplyDryRun)
 		} else if len(args) > 0 {
 			settings := utils.ReadSettings()
@@ -520,7 +528,9 @@ Exit Codes:
 				log.Fatal("This command only works with VBR at the moment.")
 			}
 
-			result := applyWithOptionalOverlay(args[0], sobrApplyOverlayFile, sobrApplyConfig, profile, sobrApplyDryRun)
+			result := applyWithDryRunOutput(sobrApplyOutput, sobrApplyDryRun, func() ApplyResult {
+				return applyWithOptionalOverlay(args[0], sobrApplyOverlayFile, sobrApplyConfig, profile, sobrApplyDryRun)
+			})
 			if result.Error != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", result.Error)
 				outcome := DetermineApplyOutcome([]ApplyResult{result})
@@ -1059,6 +1069,7 @@ func init() {
 	repoDiffCmd.Flags().StringVar(&repoDiffGroupName, "group", "", "Check drift for all specs in named group (from owlctl.yaml)")
 	addSeverityFlags(repoDiffCmd)
 	repoApplyCmd.Flags().BoolVar(&repoApplyDryRun, "dry-run", false, "Preview changes without applying them")
+	repoApplyCmd.Flags().StringVar(&repoApplyOutput, "output", "", dryRunOutputUsage)
 	repoApplyCmd.Flags().StringVar(&repoApplyGroupName, "group", "", "Apply all specs in named group (from owlctl.yaml)")
 	repoApplyCmd.Flags().StringVar(&repoApplyOverlayFile, "overlay", "", "Overlay file to merge with base configuration")
 
@@ -1067,6 +1078,7 @@ func init() {
 	sobrDiffCmd.Flags().StringVar(&sobrDiffGroupName, "group", "", "Check drift for all specs in named group (from owlctl.yaml)")
 	addSeverityFlags(sobrDiffCmd)
 	sobrApplyCmd.Flags().BoolVar(&sobrApplyDryRun, "dry-run", false, "Preview changes without applying them")
+	sobrApplyCmd.Flags().StringVar(&sobrApplyOutput, "output", "", dryRunOutputUsage)
 	sobrApplyCmd.Flags().StringVar(&sobrApplyGroupName, "group", "", "Apply all specs in named group (from owlctl.yaml)")
 	sobrApplyCmd.Flags().StringVar(&sobrApplyOverlayFile, "overlay", "", "Overlay file to merge with base configuration")
 

@@ -127,7 +127,7 @@ func TestPlannedJobState(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := plannedJobState(tt.spec, tt.existing)
+			got := plannedJobState(tt.spec, tt.existing, "job-123")
 			if tt.want == "" && got != "" {
 				t.Fatalf("expected no plan, got %q", got)
 			}

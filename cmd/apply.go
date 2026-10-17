@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/shapedthought/owlctl/config"
 	"github.com/shapedthought/owlctl/models"
@@ -19,6 +21,7 @@ var (
 	environment string
 	dryRun      bool
 	groupName   string
+	applyOutput string
 )
 
 var applyCmd = &cobra.Command{
@@ -68,6 +71,9 @@ Overlay Resolution:
 			if environment != "" {
 				log.Fatal("Cannot use --group with --env (group defines its own overlay)")
 			}
+			if strings.EqualFold(applyOutput, "json") {
+				log.Fatal("Cannot use --group with --output json")
+			}
 			applyGroup(groupName)
 		} else if len(args) > 0 {
 			applyJob(args[0])
@@ -78,6 +84,8 @@ Overlay Resolution:
 }
 
 func applyJob(configFile string) {
+	defer beginDryRunOutput(applyOutput, dryRun)()
+
 	settings := utils.ReadSettings()
 	profile := utils.GetCurrentProfile()
 
@@ -129,50 +137,29 @@ func applyJob(configFile string) {
 
 	// Display merged configuration in dry-run mode
 	if dryRun {
-		fmt.Println("\n╔════════════════════════════════════════════════════════════════════╗")
-		fmt.Println("║                         Dry Run Mode                               ║")
-		fmt.Println("╚════════════════════════════════════════════════════════════════════╝")
-		fmt.Println()
-		fmt.Printf("Resource: %s (%s)\n", finalSpec.Metadata.Name, finalSpec.Kind)
-		fmt.Println()
-
 		// Fetch current job from VBR to show diff
 		currentRaw, currentID, err := fetchCurrentJob(finalSpec.Metadata.Name, profile)
 		if err != nil {
 			log.Fatalf("Failed to fetch current job: %v", err)
 		}
 
-		if currentRaw == nil {
-			// Job doesn't exist - will be created
-			fmt.Println("⚠ Job not found in VBR - will be created")
-			fmt.Println()
-			showNewJobSummary(finalSpec)
-			if plan := plannedJobStateForDryRun(finalSpec.Spec, nil); plan != "" {
-				fmt.Printf("\nWould call: %s\n", plan)
-			}
-		} else {
-			// Job exists - show diff
-			fmt.Printf("✓ Current job found in VBR (ID: %s)\n", currentID)
-			fmt.Println()
-
-			var currentMap map[string]interface{}
+		var currentMap map[string]interface{}
+		if currentRaw != nil {
 			if err := json.Unmarshal(currentRaw, &currentMap); err != nil {
 				log.Fatalf("Failed to unmarshal current job: %v", err)
 			}
-			showJobDiff(finalSpec, currentMap)
-			if plan := plannedJobStateForDryRun(finalSpec.Spec, currentMap); plan != "" {
-				fmt.Printf("\nWould call: %s\n", plan)
-			}
 		}
-
-		fmt.Println("\n=== End Dry Run ===")
-		fmt.Println("Note: This is a preview. No changes have been made.")
-		fmt.Println("Remove --dry-run flag to apply these changes.")
+		emitDryRun(jobDryRunReport(finalSpec, currentMap, currentID))
 		return
 	}
 
 	// Apply the job configuration
 	if err := applyVBRJob(finalSpec, profile); err != nil {
+		var reported alreadyReportedError
+		if errors.As(err, &reported) {
+			// The warning above already carries VBR's message; just fail.
+			os.Exit(ExitError)
+		}
 		log.Fatalf("Failed to apply job: %v", err)
 	}
 
@@ -277,7 +264,7 @@ func applyGroup(group string) {
 		}
 
 		// Check existence BEFORE apply to correctly determine created vs updated
-		existingRaw, _, err := fetchCurrentJob(mergedSpec.Metadata.Name, profile)
+		existingRaw, existingID, err := fetchCurrentJob(mergedSpec.Metadata.Name, profile)
 		if err != nil {
 			result.Error = fmt.Errorf("failed to fetch current job: %w", err)
 			results = append(results, result)
@@ -305,7 +292,7 @@ func applyGroup(group string) {
 					continue
 				}
 			}
-			if plan := plannedJobStateForDryRun(mergedSpec.Spec, existingMap); plan != "" {
+			if plan := plannedJobStateForDryRun(mergedSpec.Spec, existingMap, existingID); plan != "" {
 				fmt.Printf("  Would call: %s\n", plan)
 			}
 			fmt.Println()
@@ -398,6 +385,20 @@ var jobApplyConfig = ResourceApplyConfig{
 	PreparePayload: prepareJobPayload,
 	PostApply:      applyJobState,
 	PlanPostApply:  plannedJobState,
+	SeverityMap:    jobSeverityMap,
+}
+
+// jobDryRunReport builds the --dry-run report for a job. existing is the live
+// job (nil if it does not exist) and id its VBR id. Drift is computed with the
+// job drift engine so severities match `job diff`.
+func jobDryRunReport(spec resources.ResourceSpec, existing map[string]interface{}, id string) *DryRunReport {
+	name, kind := spec.Metadata.Name, spec.Kind
+	plan := plannedJobStateForDryRun(spec.Spec, existing, id)
+	if existing == nil {
+		return newDryRunCreateReport(name, kind, cleanSpec(spec.Spec, jobIgnoreFields), plan)
+	}
+	drifts := classifyDrifts(detectDrift(spec.Spec, existing, jobIgnoreFields), jobSeverityMap)
+	return newDryRunUpdateReport(name, kind, newDryRunChangesFromDrifts(drifts), nil, plan)
 }
 
 // fetchCurrentJob retrieves a job by name from VBR.
@@ -537,6 +538,7 @@ func init() {
 	applyCmd.Flags().StringVarP(&overlayFile, "overlay", "o", "", "Overlay file to merge with base configuration")
 	applyCmd.Flags().StringVar(&environment, "env", "", "Environment to use (looks up overlay from owlctl.yaml)")
 	applyCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without applying them")
+	applyCmd.Flags().StringVar(&applyOutput, "output", "", "Dry-run output format: text (default) or json (requires --dry-run)")
 	applyCmd.Flags().StringVar(&groupName, "group", "", "Apply all specs in named group (from owlctl.yaml)")
 
 	jobsCmd.AddCommand(applyCmd)

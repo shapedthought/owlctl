@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"sort"
@@ -119,7 +120,8 @@ func tryFloat64(v interface{}) (float64, bool) {
 	}
 }
 
-// applyFormatValue formats a value for display
+// applyFormatValue formats a value for display. Strings are never truncated so
+// scripts can compare the full old and new values.
 func applyFormatValue(v interface{}) string {
 	if v == nil {
 		return "<none>"
@@ -127,10 +129,6 @@ func applyFormatValue(v interface{}) string {
 
 	switch val := v.(type) {
 	case string:
-		// Truncate long strings
-		if len(val) > 50 {
-			return fmt.Sprintf("\"%s...\"", val[:47])
-		}
 		return fmt.Sprintf("\"%s\"", val)
 	case bool:
 		return fmt.Sprintf("%t", val)
@@ -177,57 +175,24 @@ func printApplyChanges(changes []FieldChange, resourceName string, success bool)
 	}
 }
 
-// printDryRunUpdate prints what would change in dry-run mode for an update
-func printDryRunUpdate(resourceName, resourceKind string, changes []FieldChange) {
-	fmt.Println("\n=== Dry Run Mode ===")
-	fmt.Printf("Resource: %s (%s)\n", resourceName, resourceKind)
-	fmt.Println("Action: Would UPDATE existing resource")
-	fmt.Println()
-
-	if len(changes) == 0 {
-		fmt.Println("No changes detected. Resource is already in desired state.")
-	} else {
-		fmt.Println("Changes that would be applied:")
-		for _, change := range changes {
-			oldStr := applyFormatValue(change.OldValue)
-			newStr := applyFormatValue(change.NewValue)
-			fmt.Printf("  ~ %s: %s -> %s\n", change.Path, oldStr, newStr)
-		}
-		fmt.Printf("\n%d field(s) would be changed.\n", len(changes))
-	}
-
-	fmt.Println("\n=== End Dry Run ===")
-	fmt.Println("No changes made. Remove --dry-run flag to apply.")
-}
-
-// printDryRunCreate prints what would be created in dry-run mode
-func printDryRunCreate(resourceName, resourceKind string, spec map[string]interface{}) {
-	fmt.Println("\n=== Dry Run Mode ===")
-	fmt.Printf("Resource: %s (%s)\n", resourceName, resourceKind)
-	fmt.Println("Action: Would CREATE new resource")
-	fmt.Println()
-
-	// Show key fields from the spec
-	fmt.Println("Configuration to be created:")
-	printSpecSummary(spec, "  ")
-
-	fmt.Println("\n=== End Dry Run ===")
-	fmt.Println("No changes made. Remove --dry-run flag to apply.")
-}
-
-// printSpecSummary prints a summary of key fields in a spec
-func printSpecSummary(spec map[string]interface{}, indent string) {
+// printSpecSummaryTo writes a summary of key fields in a spec
+func printSpecSummaryTo(w io.Writer, spec map[string]interface{}, indent string) {
 	// List of key fields to display (in order)
 	keyFields := []string{"name", "description", "type", "isEnabled", "isDisabled"}
 
 	for _, field := range keyFields {
 		if val, ok := spec[field]; ok {
-			fmt.Printf("%s%s: %s\n", indent, field, applyFormatValue(val))
+			fmt.Fprintf(w, "%s%s: %s\n", indent, field, applyFormatValue(val))
 		}
 	}
 
-	// Show nested object summaries
-	for key, val := range spec {
+	// Show nested object summaries (sorted for stable output)
+	keys := make([]string, 0, len(spec))
+	for key := range spec {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
 		// Skip already printed fields
 		isKeyField := false
 		for _, kf := range keyFields {
@@ -240,11 +205,11 @@ func printSpecSummary(spec map[string]interface{}, indent string) {
 			continue
 		}
 
-		switch v := val.(type) {
+		switch v := spec[key].(type) {
 		case map[string]interface{}:
-			fmt.Printf("%s%s: {%d fields}\n", indent, key, len(v))
+			fmt.Fprintf(w, "%s%s: {%d fields}\n", indent, key, len(v))
 		case []interface{}:
-			fmt.Printf("%s%s: [%d items]\n", indent, key, len(v))
+			fmt.Fprintf(w, "%s%s: [%d items]\n", indent, key, len(v))
 		}
 	}
 }
@@ -381,8 +346,8 @@ func BuildKmsGuidance(resourceName, origin string) RemediationGuidance {
 
 // SkippedField represents a field that was skipped during apply
 type SkippedField struct {
-	Path   string
-	Reason string
+	Path   string `json:"path"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // printSkippedFields prints fields that were skipped due to policy or known immutability
@@ -398,41 +363,6 @@ func printSkippedFields(skipped []SkippedField) {
 			fmt.Printf("    %s\n", s.Reason)
 		}
 	}
-}
-
-// printDryRunUpdateWithSkipped prints dry-run output including skipped fields
-func printDryRunUpdateWithSkipped(resourceName, resourceKind string, changes []FieldChange, skipped []SkippedField) {
-	fmt.Println("\n=== Dry Run Mode ===")
-	fmt.Printf("Resource: %s (%s)\n", resourceName, resourceKind)
-	fmt.Println("Action: Would UPDATE existing resource")
-	fmt.Println()
-
-	if len(changes) == 0 && len(skipped) == 0 {
-		fmt.Println("No changes detected. Resource is already in desired state.")
-	} else {
-		if len(changes) > 0 {
-			fmt.Println("Changes that would be applied:")
-			for _, change := range changes {
-				oldStr := applyFormatValue(change.OldValue)
-				newStr := applyFormatValue(change.NewValue)
-				fmt.Printf("  ~ %s: %s -> %s\n", change.Path, oldStr, newStr)
-			}
-			fmt.Printf("\n%d field(s) would be changed.\n", len(changes))
-		}
-
-		if len(skipped) > 0 {
-			fmt.Println("\nSkipped (not sent to VBR):")
-			for _, s := range skipped {
-				fmt.Printf("  - %s\n", s.Path)
-				if s.Reason != "" {
-					fmt.Printf("    %s\n", s.Reason)
-				}
-			}
-		}
-	}
-
-	fmt.Println("\n=== End Dry Run ===")
-	fmt.Println("No changes made. Remove --dry-run flag to apply.")
 }
 
 // sanitizeFileName converts a resource name to a safe filename.

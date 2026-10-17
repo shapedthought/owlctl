@@ -373,15 +373,40 @@ Resource: Default Backup Repository (VBRRepository)
 Action: Would UPDATE existing resource
 
 Changes that would be applied:
-  ~ description: "Created by Veeam Backup" -> "Updated description"
-  ~ repository.maxTaskCount: 4 -> 8
-  ~ repository.makeRecentBackupsImmutableDays: 7 -> 14
+  INFO ~ description: "Created by Veeam Backup" -> "Updated description"
+  INFO ~ repository.maxTaskCount: 4 -> 8
+  CRITICAL ~ repository.makeRecentBackupsImmutableDays: 7 -> 14
 
 3 field(s) would be changed.
 
 === End Dry Run ===
 No changes made. Remove --dry-run flag to apply.
 ```
+
+`job apply --dry-run` and every other apply command (`repo apply`, `repo sobr-apply`, `encryption kms-apply`, `config-backup apply`) print the same format: `  <SEVERITY> <~|+|-> <path>: <old> -> <new>`, where `~` is a changed value, `+` a value being set where there was none, and `-` a value being unset. Severity comes from the same map as `diff` (INFO where a field has none). Values are never truncated. When nothing differs, every command prints `No changes detected. Resource is already in desired state.`
+
+### Machine-readable output
+
+Add `--output json` to a single-file `--dry-run` to get one JSON document on stdout (banners and warnings go to stderr):
+
+```bash
+owlctl job apply job.yaml --dry-run --output json
+```
+
+```json
+{
+  "resource": "DB Backup",
+  "kind": "VBRJob",
+  "action": "would-update",
+  "changes": [
+    {"path": "description", "old": "a", "new": "b", "severity": "INFO"}
+  ],
+  "skipped": [],
+  "postApply": "POST jobs/<id>/disable (isDisabled: false -> true)"
+}
+```
+
+`action` is `would-create`, `would-update` or `no-change`. `--output json` requires `--dry-run` and is not supported with `--group`. Dry-run exits `0` whether or not changes are pending; use `job diff` / `repo diff` for drift exit codes (`3`/`4`).
 
 ### CI/CD Validation Stage
 
@@ -509,8 +534,8 @@ Resource: Default Backup Repository (VBRRepository)
 Action: Would UPDATE existing resource
 
 Changes that would be applied:
-  ~ description: "Original" -> "Updated description"
-  ~ repository.maxTaskCount: 4 -> 8
+  INFO ~ description: "Original" -> "Updated description"
+  INFO ~ repository.maxTaskCount: 4 -> 8
 
 2 field(s) would be changed.
 

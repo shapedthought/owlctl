@@ -14,14 +14,15 @@ import (
 )
 
 var (
-	encSnapshotAll     bool
-	encDiffAll         bool
-	kmsSnapshotAll     bool
-	kmsDiffAll         bool
-	kmsApplyDryRun       bool
-	kmsApplyGroupName    string
-	kmsApplyOverlayFile  string
-	kmsDiffGroupName     string
+	encSnapshotAll      bool
+	encDiffAll          bool
+	kmsSnapshotAll      bool
+	kmsDiffAll          bool
+	kmsApplyDryRun      bool
+	kmsApplyOutput      string
+	kmsApplyGroupName   string
+	kmsApplyOverlayFile string
+	kmsDiffGroupName    string
 
 	// Export flags
 	encExportOutput    string
@@ -449,6 +450,7 @@ var kmsApplyConfig = ResourceApplyConfig{
 	IgnoreFields: kmsIgnoreFields,
 	Mode:         ApplyUpdateOnly,
 	FetchCurrent: fetchCurrentKmsServer,
+	SeverityMap:  kmsSeverityMap,
 }
 
 // fetchCurrentKmsServer retrieves a KMS server by name from VBR
@@ -498,6 +500,7 @@ Exit Codes:
 			if kmsApplyOverlayFile != "" {
 				log.Fatal("Cannot use --group with --overlay (group defines its own overlay)")
 			}
+			rejectGroupJSONOutput(kmsApplyOutput)
 			applyGroupResource(kmsApplyGroupName, kmsApplyConfig, kmsApplyDryRun)
 		} else if len(args) > 0 {
 			settings := utils.ReadSettings()
@@ -507,7 +510,9 @@ Exit Codes:
 				log.Fatal("This command only works with VBR at the moment.")
 			}
 
-			result := applyWithOptionalOverlay(args[0], kmsApplyOverlayFile, kmsApplyConfig, profile, kmsApplyDryRun)
+			result := applyWithDryRunOutput(kmsApplyOutput, kmsApplyDryRun, func() ApplyResult {
+				return applyWithOptionalOverlay(args[0], kmsApplyOverlayFile, kmsApplyConfig, profile, kmsApplyDryRun)
+			})
 			if result.Error != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", result.Error)
 				outcome := DetermineApplyOutcome([]ApplyResult{result})
@@ -1131,6 +1136,7 @@ func init() {
 	kmsDiffCmd.Flags().StringVar(&kmsDiffGroupName, "group", "", "Check drift for all specs in named group (from owlctl.yaml)")
 	addSeverityFlags(kmsDiffCmd)
 	kmsApplyCmd.Flags().BoolVar(&kmsApplyDryRun, "dry-run", false, "Preview changes without applying them")
+	kmsApplyCmd.Flags().StringVar(&kmsApplyOutput, "output", "", dryRunOutputUsage)
 	kmsApplyCmd.Flags().StringVar(&kmsApplyGroupName, "group", "", "Apply all specs in named group (from owlctl.yaml)")
 	kmsApplyCmd.Flags().StringVar(&kmsApplyOverlayFile, "overlay", "", "Overlay file to merge with base configuration")
 

@@ -37,6 +37,7 @@ var (
 	configBackupExportOutput string
 	configBackupApplyOverlay string
 	configBackupApplyDryRun  bool
+	configBackupApplyOutput  string
 	configBackupDiffSeverity string
 	configBackupSecurityOnly bool
 )
@@ -331,13 +332,16 @@ Supports --overlay for environment-specific overrides and --dry-run to preview c
 			Endpoint:     configBackupEndpoint,
 			IgnoreFields: configBackupIgnoreFields,
 			Mode:         ApplyUpdateOnly,
+			SeverityMap:  configBackupSeverityMap,
 			FetchCurrent: func(name string, profile models.Profile) (json.RawMessage, string, error) {
 				rawData := vhttp.GetData[json.RawMessage](configBackupEndpoint, profile)
 				return rawData, configBackupEndpoint, nil
 			},
 		}
 
-		result := applyWithOptionalOverlay(args[0], configBackupApplyOverlay, cfg, profile, configBackupApplyDryRun)
+		result := applyWithDryRunOutput(configBackupApplyOutput, configBackupApplyDryRun, func() ApplyResult {
+			return applyWithOptionalOverlay(args[0], configBackupApplyOverlay, cfg, profile, configBackupApplyDryRun)
+		})
 
 		if result.Error != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", result.Error)
@@ -368,4 +372,5 @@ func init() {
 	configBackupCmd.AddCommand(configBackupApplyCmd)
 	configBackupApplyCmd.Flags().StringVar(&configBackupApplyOverlay, "overlay", "", "Overlay file to merge with the spec before applying")
 	configBackupApplyCmd.Flags().BoolVar(&configBackupApplyDryRun, "dry-run", false, "Preview changes without applying")
+	configBackupApplyCmd.Flags().StringVar(&configBackupApplyOutput, "output", "", dryRunOutputUsage)
 }
