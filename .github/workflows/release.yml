@@ -45,3 +45,8 @@ jobs:
           release_tag: ${{ github.ref_name }}
           overwrite: true
           asset_name: "owlctl-${{ matrix.goos }}-${{ matrix.goarch }}"
+          # Version metadata for `owlctl --version` / `owlctl version` (#182). Without it binaries report "dev".
+          ldflags: >-
+            -X github.com/shapedthought/owlctl/cmd.version=${{ github.ref_name }}
+            -X github.com/shapedthought/owlctl/cmd.commit=${{ github.sha }}
+            -X github.com/shapedthought/owlctl/cmd.date=${{ github.event.release.created_at }}
