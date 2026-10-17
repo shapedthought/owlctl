@@ -85,6 +85,20 @@ func TestTemplatePathsResolve(t *testing.T) {
 	}
 }
 
+func TestPasswordScanAndPublishSafety(t *testing.T) {
+	data, err := os.ReadFile("lab-verification.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !regexp.MustCompile(`grep -r[a-zA-Z]*[ql][a-zA-Z]*E '\^\\s\*password`).MatchString(text) {
+		t.Error("password scan must use -q or -l so values are never printed")
+	}
+	if strings.Contains(text, "succeededOrFailed()") {
+		t.Error("exports must not be published when the scan fails")
+	}
+}
+
 func TestNoIPsOrSecrets(t *testing.T) {
 	ip := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	secret := regexp.MustCompile(`(?i)(password|token|secret)\s*[:=]\s*["']?[A-Za-z0-9+/_\-]{8,}`)
