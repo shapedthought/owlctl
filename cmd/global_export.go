@@ -50,6 +50,8 @@ Output structure:
       my-password.yaml
     kms/
       kms-server.yaml
+    config-backup/
+      configuration-backup.yaml
 
 Use --all-instances to export all instances defined in owlctl.yaml.
 Use --from-state to generate YAML from state.json without contacting the VBR server.
@@ -198,17 +200,23 @@ var fromStateIgnoreFields = map[string]map[string]bool{
 	"VBRConfigurationBackup": configBackupIgnoreFields,
 }
 
-// exportInstanceFromState writes YAML files for all resources in a state instance.
-func exportInstanceFromState(instanceName string, inst *state.InstanceState, outDir string) {
-	// Build a Kind → FolderName map across all registered products. We don't key
-	// on inst.Product: state migrated from v3 doesn't have Product set, which
-	// would otherwise return no exporter and bucket every resource under "unknown/".
+// registryKindToFolder returns the Kind → FolderName map across all registered products.
+func registryKindToFolder() map[string]string {
 	kindToFolder := make(map[string]string)
 	for i := range exportRegistry {
 		for _, e := range exportRegistry[i].Resources {
 			kindToFolder[e.Kind] = e.FolderName
 		}
 	}
+	return kindToFolder
+}
+
+// exportInstanceFromState writes YAML files for all resources in a state instance.
+func exportInstanceFromState(instanceName string, inst *state.InstanceState, outDir string) {
+	// Build a Kind → FolderName map across all registered products. We don't key
+	// on inst.Product: state migrated from v3 doesn't have Product set, which
+	// would otherwise return no exporter and bucket every resource under "unknown/".
+	kindToFolder := registryKindToFolder()
 
 	// Group resources by kind/folder
 	type entry struct {
@@ -281,7 +289,13 @@ func exportInstanceFromState(instanceName string, inst *state.InstanceState, out
 			continue
 		}
 
-		fp := filepath.Join(subDir, sanitizeFilename(e.name)+".yaml")
+		// The config-backup singleton uses the same fixed name as a live export.
+		fileName := sanitizeFilename(e.name) + ".yaml"
+		if e.res.Type == resources.KindVBRConfigurationBackup {
+			fileName = configBackupExportFile
+		}
+
+		fp := filepath.Join(subDir, fileName)
 		content := append([]byte(header), yamlBytes...)
 		if err := os.WriteFile(fp, content, 0644); err != nil {
 			fmt.Printf("Warning: Failed to write %s: %v\n", fp, err)
@@ -290,7 +304,7 @@ func exportInstanceFromState(instanceName string, inst *state.InstanceState, out
 		}
 
 		successCount++
-		fmt.Printf("  Exported %s/%s\n", e.folder, sanitizeFilename(e.name)+".yaml")
+		fmt.Printf("  Exported %s/%s\n", e.folder, fileName)
 	}
 
 	fmt.Printf("\nExport complete: %d successful, %d failed. Files written to: %s\n", successCount, failedCount, outDir)

@@ -137,9 +137,10 @@ exports/
   sobrs/          scale-out-repo.yaml
   encryption/     my-password.yaml
   kms/            kms-server.yaml
+  config-backup/  configuration-backup.yaml
 ```
 
-> **Note:** `snapshot --all` covers repositories, SOBRs, encryption passwords, and KMS servers. Jobs are skipped (baselined via `job apply`); configuration backup is snapshotted separately with `config-backup snapshot`.
+> **Note:** `snapshot --all` covers repositories, SOBRs, encryption passwords, KMS servers, and configuration backup. Jobs are skipped (baselined via `job apply`).
 
 ### Export Resources
 
@@ -561,7 +562,7 @@ owlctl get jobs | jq '.data[] | {name: .name, type: .type}'
 ```bash
 # Export everything in one command
 owlctl export --all -d specs/
-owlctl config-backup export -o specs/config-backup.yaml   # singleton, not included in export --all
+owlctl config-backup export -o specs/config-backup.yaml   # singleton; export --all also writes config-backup/configuration-backup.yaml
 
 # Commit to Git
 git add specs/
