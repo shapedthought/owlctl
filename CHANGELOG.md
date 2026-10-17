@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `examples/pipelines/lab-verification/`: Azure DevOps example pipeline that verifies owlctl against a lab VBR (login, get, export, `job apply --dry-run` drift check, optional guarded apply cycle and backup run), with tests that parse the YAML and check for IPs and secrets (#167)
 - `owlctl export --all` and `owlctl snapshot --all` now include the configuration backup singleton: export writes `config-backup/configuration-backup.yaml`, and `export --from-state` maps `VBRConfigurationBackup` to `config-backup/` instead of `unknown/`. The export registry gains an `IsSingleton` flag; help text and docs no longer carry the "not included" caveats (#163)
 
 ### Fixed

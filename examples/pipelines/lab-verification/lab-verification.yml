@@ -1,0 +1,245 @@
+# Lab verification pipeline for owlctl (example).
+# Stages 1-2 are read-only (get/export, job apply --dry-run drift check).
+# Stage 3 (runApplyCycle) writes only to <testJob>-apply; stage 4 (runBackup) runs <testJob> once.
+# Nothing is ever deleted. Point it at a LAB VBR only.
+#
+# Prerequisites:
+#   - a self-hosted Linux agent pool that can reach the lab VBR (jq installed)
+#   - a variable group with OWLCTL_URL (hostname or IP only), OWLCTL_USERNAME, OWLCTL_PASSWORD (secret)
+#   - a disposable lab backup job (testJob) and a repository name (backupRepo) for the backup check
+#
+# Manual only: no schedules. To also run on pull requests, replace `pr: none` with a `pr:` block
+# (see README.md).
+trigger: none
+pr: none
+
+parameters:
+  - name: testJob
+    type: string
+    default: owlctl-test-job
+  - name: backupRepo
+    type: string
+    default: lab-hardened-repo
+  - name: owlctlVersion
+    type: string
+    default: v1.3.0
+  - name: runApplyCycle
+    type: boolean
+    default: false
+  - name: runBackup
+    type: boolean
+    default: false
+
+pool:
+  name: <your-lab-agent-pool>
+  demands:
+    - Agent.OS -equals Linux
+
+variables:
+  - group: <your-lab-variable-group>   # OWLCTL_URL, OWLCTL_USERNAME, OWLCTL_PASSWORD (secret)
+  - name: testJob
+    value: ${{ parameters.testJob }}
+  - name: applyJob
+    value: ${{ parameters.testJob }}-apply
+  - name: hardenedRepo
+    value: ${{ parameters.backupRepo }}
+
+stages:
+  - stage: ReadOnly
+    jobs:
+      - job: ReadOnly
+        steps:
+          - checkout: none
+          - template: ../templates/install-owlctl.yml
+            parameters:
+              owlctlVersion: ${{ parameters.owlctlVersion }}
+          - template: templates/owlctl-login.yml
+          - bash: |
+              set -euo pipefail
+              source "$(Agent.TempDirectory)/owlctl-env.sh"
+              fail=0
+              exports="$(Build.ArtifactStagingDirectory)/exports"
+              rm -rf "$exports" && mkdir -p "$exports"   # fresh dir: self-hosted agents can keep files from earlier runs
+              check() { # name, owlctl args...
+                local name="$1"; shift
+                local out rc=0
+                out=$(./owlctl "$@" 2>&1) || rc=$?
+                if [ $rc -ne 0 ]; then echo "##vso[task.logissue type=error]$name: exit $rc"; echo "$out" | tail -5; fail=1; return; fi
+                if [ -z "$(echo "$out" | tr -d '[:space:]')" ]; then echo "##vso[task.logissue type=error]$name: empty output"; fail=1; return; fi
+                echo "ok    $name ($(echo "$out" | jq -r 'if type=="object" and has("data") then "\(.data|length) items" else "json" end' 2>/dev/null || echo "$(echo "$out" | wc -l) lines"))"
+              }
+              check "get jobs"            get jobs
+              check "get repositories"    get backupInfrastructure/repositories
+              check "get SOBRs"           get backupInfrastructure/scaleOutRepositories
+              check "get credentials"     get credentials
+              check "get encryption"      get encryptionPasswords
+              check "job export --all"    job export --all -d "$exports/jobs"
+              check "repo export --all"   repo export --all -d "$exports/repos"
+              check "repo sobr-export"    repo sobr-export --all -d "$exports/sobrs"
+              check "encryption export"   encryption export --all -d "$exports/encryption"
+              rc=0; ./owlctl export --all -d "$exports/all" || rc=$?
+              [ $rc -eq 0 ] || { echo "##vso[task.logissue type=error]export --all: exit $rc"; fail=1; }
+              n=$(find "$exports" -name '*.yaml' | wc -l)
+              echo "exported $n yaml files"; [ "$n" -gt 0 ] || { echo "##vso[task.logissue type=error]no YAML exported"; fail=1; }
+              # Credentials export must never contain secret values
+              # -q: never print the matching line (it would contain the value)
+              if grep -rqiE '^\s*password:\s*\S' "$exports" 2>/dev/null; then echo "##vso[task.logissue type=error]password value found in export (value not shown)"; fail=1; fi
+              echo "--- field names used by later stages (keys only)"
+              ./owlctl get jobs | jq -c '.data[0] | keys'
+              ./owlctl get jobs/states | jq -c '.data[0] | keys'
+              ./owlctl get backupInfrastructure/repositories | jq -c '.data[0] | keys'
+              ./owlctl get backups | jq -c '.data[0] // {} | keys' || echo "get backups failed"
+              echo "--- test job state"
+              ./owlctl get jobs | jq -c '.data[] | select(.name|startswith("$(testJob)")) | {name,isDisabled,description,runAutomatically:.schedule.runAutomatically}'
+              ./owlctl get jobs | jq -r '.data[] | select(.name=="$(testJob)") | .id' | while read -r j; do ./owlctl get jobs/$j | jq -S . | sha256sum | sed 's/^/$(testJob) config sha256 /'; done
+              exit $fail
+            displayName: get/export checks
+            env:
+              OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
+              OWLCTL_TOKEN: $(OWLCTL_TOKEN)
+          # Only published when the step above (including the password scan) succeeded
+          - publish: $(Build.ArtifactStagingDirectory)/exports
+            artifact: exports
+            condition: succeeded()
+            continueOnError: true
+
+  - stage: Drift
+    dependsOn: ReadOnly
+    jobs:
+      - job: Drift
+        steps:
+          - checkout: none
+          - template: ../templates/install-owlctl.yml
+            parameters:
+              owlctlVersion: ${{ parameters.owlctlVersion }}
+          - template: templates/owlctl-login.yml
+          - bash: |
+              set -euo pipefail
+              source "$(Agent.TempDirectory)/owlctl-env.sh"
+              id=$(./owlctl get jobs | jq -r --arg n "$(testJob)" '.data[] | select(.name==$n) | .id')
+              [ -n "$id" ] || { echo "##vso[task.logissue type=error]$(testJob) not found"; exit 1; }
+              ./owlctl job export "$id" -o export.yaml
+              echo "--- dry-run on unmodified export"
+              ./owlctl job apply export.yaml --dry-run | tee same.txt
+              grep -q "No changes detected" same.txt || { echo "##vso[task.logissue type=error]dry-run on fresh export reports changes"; exit 1; }
+              echo "--- dry-run with description changed"
+              echo "--- export structure (keys only)"; grep -nE '^ {0,4}[A-Za-z]+:' export.yaml | sed -E 's/:.*/:/' | head -40
+              if grep -qE '^\s*description:\s*[|>]' export.yaml; then echo "##vso[task.logissue type=error]export has a block-scalar description (| or >); this example only edits single-line descriptions"; exit 1; fi
+              setdesc() { # file, value -> stdout; first description: line at any indent, else insert under spec:
+                if grep -qE '^\s*description:' "$1"; then sed -E "0,/^(\s*)description:.*/s//\1description: \"$2\"/" "$1"
+                else sed -E "0,/^spec:\s*$/s//spec:\n  description: \"$2\"/" "$1"; fi; }
+              setdesc export.yaml "owlctl-tests drift probe" > changed.yaml
+              diff export.yaml changed.yaml && { echo "##vso[task.logissue type=error]could not change description in export"; exit 1; } || true
+              ./owlctl job apply changed.yaml --dry-run | tee changed.txt
+              n=$(grep -cE '^\s+[A-Z]+ [~+-] ' changed.txt || true)
+              grep -qE '^\s+[A-Z]+ [~+-] \S*description:' changed.txt && [ "$n" -eq 1 ] || { echo "##vso[task.logissue type=error]expected exactly 1 change (description), got $n"; exit 1; }
+              echo "ok    drift detected exactly one change"
+            displayName: apply --dry-run drift
+            env:
+              OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
+              OWLCTL_TOKEN: $(OWLCTL_TOKEN)
+
+  - ${{ if eq(parameters.runApplyCycle, true) }}:
+    - stage: ApplyCycle
+      dependsOn: Drift
+      jobs:
+        - job: ApplyCycle
+          steps:
+            - checkout: none
+            - template: ../templates/install-owlctl.yml
+              parameters:
+                owlctlVersion: ${{ parameters.owlctlVersion }}
+            - template: templates/owlctl-login.yml
+            - bash: |
+                set -euo pipefail
+                source "$(Agent.TempDirectory)/owlctl-env.sh"
+                jid() { ./owlctl get jobs | jq -r --arg n "$1" '.data[] | select(.name==$n) | .id'; }
+                src=$(jid "$(testJob)"); [ -n "$src" ] || { echo "##vso[task.logissue type=error]$(testJob) not found"; exit 1; }
+                srcsum=$(./owlctl get jobs/$src | jq -S . | sha256sum)
+                id=$(jid "$(applyJob)")
+                if [ -z "$id" ]; then
+                  echo "creating $(applyJob) from $(testJob) (disabled, no schedule)"
+                  ./owlctl job export "$src" -o src.yaml
+                  sed -E -e 's/^(\s*name:\s*)"?$(testJob)"?\s*$/\1$(applyJob)/' \
+                         -e 's/^(\s*isDisabled:\s*)false/\1true/' \
+                         -e 's/^(\s*runAutomatically:\s*)true/\1false/' src.yaml > clone.yaml
+                  grep -q "name: $(applyJob)" clone.yaml || { echo "##vso[task.logissue type=error]rename failed"; exit 1; }
+                  ./owlctl job apply clone.yaml
+                  id=$(jid "$(applyJob)"); [ -n "$id" ] || { echo "##vso[task.logissue type=error]create failed"; exit 1; }
+                else
+                  echo "reusing $(applyJob) ($id)"
+                fi
+                case "$(./owlctl get jobs/$id | jq -r '.name')" in "$(applyJob)") ;; *) echo "##vso[task.logissue type=error]guard: id is not $(applyJob)"; exit 1;; esac
+                ./owlctl job export "$id" -o orig.yaml
+                orig=$(./owlctl get jobs/$id | jq -r '.description')
+                if grep -qE '^\s*description:\s*[|>]' orig.yaml; then echo "##vso[task.logissue type=error]export has a block-scalar description (| or >); this example only edits single-line descriptions"; exit 1; fi
+                probe="owlctl-tests apply $(Build.BuildId)"
+                if grep -qE '^\s*description:' orig.yaml; then sed -E "0,/^(\s*)description:.*/s//\1description: \"$probe\"/" orig.yaml > changed.yaml
+                else sed -E "0,/^spec:\s*$/s//spec:\n  description: \"$probe\"/" orig.yaml > changed.yaml; fi
+                ./owlctl job apply changed.yaml
+                got=$(./owlctl get jobs/$id | jq -r '.description')
+                [ "$got" = "$probe" ] || { echo "##vso[task.logissue type=error]apply not reflected: '$got'"; rc=1; }
+                echo "reverting"
+                ./owlctl job apply orig.yaml
+                back=$(./owlctl get jobs/$id | jq -r '.description')
+                [ "$back" = "$orig" ] || { echo "##vso[task.logissue type=error]revert failed: '$back' != '$orig'"; exit 1; }
+                ./owlctl job apply orig.yaml --dry-run | grep -q "No changes detected" || { echo "##vso[task.logissue type=error]drift after revert"; exit 1; }
+                [ "$(./owlctl get jobs/$src | jq -S . | sha256sum)" = "$srcsum" ] || { echo "##vso[task.logissue type=error]$(testJob) CHANGED during apply cycle"; exit 1; }
+                echo "final: $(./owlctl get jobs/$id | jq -c '{name,isDisabled,description,runAutomatically:.schedule.runAutomatically}')"
+                echo "ok    apply/verify/revert"; exit ${rc:-0}
+              displayName: guarded apply/verify/revert on $(applyJob)
+              env:
+                OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
+                OWLCTL_TOKEN: $(OWLCTL_TOKEN)
+
+  - ${{ if eq(parameters.runBackup, true) }}:
+    - stage: Backup
+      dependsOn: Drift
+      jobs:
+        - job: Backup
+          timeoutInMinutes: 90
+          steps:
+            - checkout: none
+            - template: ../templates/install-owlctl.yml
+              parameters:
+                owlctlVersion: ${{ parameters.owlctlVersion }}
+            - template: templates/owlctl-login.yml
+            - bash: |
+                set -euo pipefail
+                source "$(Agent.TempDirectory)/owlctl-env.sh"
+                id=$(./owlctl get jobs | jq -r --arg n "$(testJob)" '.data[] | select(.name==$n) | .id')
+                [ -n "$id" ] || { echo "##vso[task.logissue type=error]$(testJob) not found"; exit 1; }
+                repo=$(./owlctl get backupInfrastructure/repositories | jq -r --arg n "$(hardenedRepo)" '.data[] | select(.name==$n) | .id')
+                [ -n "$repo" ] || { echo "##vso[task.logissue type=error]$(hardenedRepo) not found"; exit 1; }
+                st() { ./owlctl get jobs/states | jq -r --arg i "$id" '.data[] | select(.id==$i) | "\(.status)|\(.lastResult)"'; }
+                [ "$(st | cut -d'|' -f1)" != "Running" ] || { echo "##vso[task.logissue type=error]job already running"; exit 1; }
+                before=$(./owlctl get jobs/states | jq -r --arg i "$id" '.data[] | select(.id==$i) | .lastRun // ""')
+                echo "state before: $(st), lastRun=$before"
+                start=$(date -u -d '-5 min' +%Y-%m-%dT%H:%M:%S)  # 5 min allowance for clock skew
+                echo "starting $(testJob) once at $start UTC"
+                ./owlctl post "jobs/$id/start" >/dev/null || echo "post exited $? (response body not shown by owlctl, see #185); polling state"
+                # Wait for the run to register (lastRun changes or status Running), then for it to leave Running
+                for i in $(seq 1 20); do s=$(st); lr=$(./owlctl get jobs/states | jq -r --arg i "$id" '.data[] | select(.id==$i) | .lastRun // ""'); [ "${s%%|*}" = "Running" ] || [ "$lr" != "$before" ] && break; sleep 15; done
+                [ "${s%%|*}" = "Running" ] || [ "$lr" != "$before" ] || { echo "##vso[task.logissue type=error]job run never registered (status not Running, lastRun unchanged); start probably failed"; exit 1; }
+                echo "registered: $s lastRun=$lr"
+                # Observed on VBR 13.1: Stopped|Success -> Inactive|None (just started) -> Running -> Stopped|<result>
+                # owlctl does not refresh the token, so re-login about every 10 minutes (20 x 30s) while polling
+                for i in $(seq 1 160); do
+                  if [ $((i % 20)) -eq 0 ]; then OWLCTL_TOKEN="$(./owlctl login --output-token | tail -1)"; export OWLCTL_TOKEN; fi
+                  s=$(st); [ "${s%%|*}" = "Running" ] || [ "${s##*|}" = "None" ] || break; sleep 30
+                done
+                s=$(st); echo "final state: $s"
+                [ "${s##*|}" = "Success" ] || [ "${s##*|}" = "Warning" ] || { echo "##vso[task.logissue type=error]job result ${s##*|}"; exit 1; }
+                b=$(./owlctl get backups | jq -r --arg i "$id" --arg r "$repo" '.data[] | select(.jobId==$i and .repositoryId==$r) | .id' | head -1)
+                [ -n "$b" ] || { echo "##vso[task.logissue type=error]no backup of $(testJob) on $(hardenedRepo)"; exit 1; }
+                ./owlctl get "restorePoints?backupIdFilter=$b" > rps.json
+                echo "restorePoints keys: $(jq -c '.data[0] // {} | keys' rps.json)"
+                latest=$(jq -r '.data[].creationTime' rps.json | sort | tail -1)
+                jq -r '.data | sort_by(.creationTime) | .[-3:][] | "rp \(.name // .platformName // "") \(.creationTime) \(.id)"' rps.json
+                echo "latest restore point: $latest"
+                [ -n "$latest" ] && [[ "$(date -u -d "$latest" +%s)" -ge "$(date -u -d "$start" +%s)" ]] || { echo "##vso[task.logissue type=error]no new restore point since $start"; exit 1; }
+                echo "ok    new restore point on $(hardenedRepo)"
+              displayName: backup $(testJob) once and verify restore point
+              env:
+                OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)
+                OWLCTL_TOKEN: $(OWLCTL_TOKEN)
