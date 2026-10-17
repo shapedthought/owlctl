@@ -37,7 +37,7 @@ An Azure DevOps pipeline that proves a released owlctl binary works end to end a
 |-----------|---------|---------|
 | `testJob` | `owlctl-test-job` | Name of the disposable lab job |
 | `backupRepo` | `lab-hardened-repo` | Repository the test job backs up to |
-| `owlctlVersion` | `v1.3.0` | Release tag to install |
+| `owlctlVersion` | `v1.4.0` | Release tag to install |
 | `runApplyCycle` | `false` | Run the `ApplyCycle` stage |
 | `runBackup` | `false` | Run the `Backup` stage |
 
