@@ -1,0 +1,19 @@
+# Log in to VBR with owlctl; keeps settings/state in a temp dir and the token as a secret variable.
+# Requires ./owlctl (see ../../templates/install-owlctl.yml) and OWLCTL_URL / OWLCTL_USERNAME /
+# OWLCTL_PASSWORD from the variable group. Later steps must run:
+#   source "$(Agent.TempDirectory)/owlctl-env.sh"
+# and pass OWLCTL_PASSWORD and OWLCTL_TOKEN in their env: block (secrets are not exported automatically).
+steps:
+  - bash: |
+      set -euo pipefail
+      export OWLCTL_SETTINGS_PATH="$(Agent.TempDirectory)/owlctl/"
+      mkdir -p "$OWLCTL_SETTINGS_PATH"
+      ./owlctl init --insecure --output-dir "$OWLCTL_SETTINGS_PATH" > /dev/null
+      ./owlctl profile --set vbr
+      # Token in the environment avoids the keychain lookup on a headless agent.
+      OWLCTL_TOKEN="$(./owlctl login --output-token | tail -1)"
+      echo "##vso[task.setvariable variable=OWLCTL_TOKEN;issecret=true]$OWLCTL_TOKEN"
+      printf 'export OWLCTL_SETTINGS_PATH=%q\n' "$OWLCTL_SETTINGS_PATH" > "$(Agent.TempDirectory)/owlctl-env.sh"
+    displayName: owlctl login
+    env:
+      OWLCTL_PASSWORD: $(OWLCTL_PASSWORD)

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `examples/pipelines/lab-verification/`: Azure DevOps example pipeline that verifies owlctl against a lab VBR (login, get, export, `job apply --dry-run` drift check, optional guarded apply cycle and backup run), with tests that parse the YAML and check for IPs and secrets (#167)
+
 ### Fixed
 - `owlctl job apply` now honours `isDisabled` on create and update: VBR ignores it on POST/PUT, so apply reads the job's actual state back and calls `POST jobs/{id}/disable` or `/enable` when it differs. If VBR refuses (for example HTTP 400 for unscheduled jobs), apply prints a warning with VBR's message and exits non-zero instead of reporting success. `--dry-run` shows the planned enable/disable call. The enable/disable call is skipped, in apply and in dry-run, when `isDisabled` is set to `skip` for jobs in `remediation-config.yaml` (#186)
 
