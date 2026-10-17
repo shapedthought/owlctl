@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/pterm/pterm"
@@ -117,6 +118,32 @@ func getOutputPath() string {
 	}
 	// Use OWLCTL_SETTINGS_PATH or current directory
 	return utils.SettingPath()
+}
+
+// prepareOutputDir resolves the output directory and creates it (0700) if missing.
+func prepareOutputDir() (string, error) {
+	basePath := getOutputPath()
+	if basePath != "" {
+		if err := os.MkdirAll(basePath, 0700); err != nil {
+			return "", fmt.Errorf("creating output directory %q: %w", basePath, err)
+		}
+	}
+	return basePath, nil
+}
+
+// mustPrepareOutputDir is prepareOutputDir for the interactive paths: exits non-zero on failure.
+func mustPrepareOutputDir() string {
+	basePath, err := prepareOutputDir()
+	exitOnInitError(err)
+	return basePath
+}
+
+// exitOnInitError prints err to stderr and exits 1 when err is non-nil.
+func exitOnInitError(err error) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 // ensureTrailingSlash adds trailing slash if missing
@@ -260,12 +287,23 @@ func getDefaultProfiles() models.ProfilesFile {
 
 // initAppNonInteractive runs init in non-interactive mode (default)
 func initAppNonInteractive() {
-	basePath := getOutputPath()
+	exitOnInitError(runInitNonInteractive(os.Stdout, os.Stderr))
+}
+
+// runInitNonInteractive writes profiles.json and settings.json and reports
+// success only after every file has been written.
+func runInitNonInteractive(stdout, stderr io.Writer) error {
+	basePath, err := prepareOutputDir()
+	if err != nil {
+		return err
+	}
 
 	// Create profiles (new v1.0 format)
 	profilesFile := getDefaultProfiles()
 	profilePath := basePath + "profiles"
-	utils.SaveJson(&profilesFile, profilePath)
+	if err := utils.SaveJsonWithError(&profilesFile, profilePath); err != nil {
+		return fmt.Errorf("writing profiles file: %w", err)
+	}
 
 	// Create settings
 	settings := models.Settings{
@@ -273,7 +311,9 @@ func initAppNonInteractive() {
 		ApiNotSecure:    insecure,
 	}
 	settingsPath := basePath + "settings"
-	utils.SaveJson(&settings, settingsPath)
+	if err := utils.SaveJsonWithError(&settings, settingsPath); err != nil {
+		return fmt.Errorf("writing settings file: %w", err)
+	}
 
 	// Output result as JSON for piping
 	result := map[string]interface{}{
@@ -288,30 +328,39 @@ func initAppNonInteractive() {
 
 	jsonOutput, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating JSON output: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating JSON output: %w", err)
 	}
 
-	fmt.Println(string(jsonOutput))
+	fmt.Fprintln(stdout, string(jsonOutput))
 
 	// Print helpful message to stderr so it doesn't interfere with JSON piping
-	fmt.Fprintln(os.Stderr, "\nInitialized successfully (profiles v1.0)")
-	fmt.Fprintln(os.Stderr, "Ensure environment variables are set: OWLCTL_USERNAME, OWLCTL_PASSWORD, OWLCTL_URL")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintf(os.Stderr, "Available profiles: %v\n", getProfileNames(profilesFile))
-	fmt.Fprintf(os.Stderr, "Current profile: %s\n", profilesFile.CurrentProfile)
+	fmt.Fprintln(stderr, "\nInitialized successfully (profiles v1.0)")
+	fmt.Fprintln(stderr, "Ensure environment variables are set: OWLCTL_USERNAME, OWLCTL_PASSWORD, OWLCTL_URL")
+	fmt.Fprintln(stderr, "")
+	fmt.Fprintf(stderr, "Available profiles: %v\n", getProfileNames(profilesFile))
+	fmt.Fprintf(stderr, "Current profile: %s\n", profilesFile.CurrentProfile)
+	return nil
 }
 
 // initSettingsNonInteractive initializes only settings.json
 func initSettingsNonInteractive() {
-	basePath := getOutputPath()
+	exitOnInitError(runInitSettings(os.Stdout, os.Stderr))
+}
+
+func runInitSettings(stdout, stderr io.Writer) error {
+	basePath, err := prepareOutputDir()
+	if err != nil {
+		return err
+	}
 
 	settings := models.Settings{
 		SelectedProfile: "vbr",
 		ApiNotSecure:    insecure,
 	}
 	settingsPath := basePath + "settings"
-	utils.SaveJson(&settings, settingsPath)
+	if err := utils.SaveJsonWithError(&settings, settingsPath); err != nil {
+		return fmt.Errorf("writing settings file: %w", err)
+	}
 
 	// Output as JSON
 	result := map[string]interface{}{
@@ -321,21 +370,30 @@ func initSettingsNonInteractive() {
 
 	jsonOutput, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating JSON output: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating JSON output: %w", err)
 	}
 
-	fmt.Println(string(jsonOutput))
-	fmt.Fprintf(os.Stderr, "\nSettings file created: %s\n", settingsPath+".json")
+	fmt.Fprintln(stdout, string(jsonOutput))
+	fmt.Fprintf(stderr, "\nSettings file created: %s\n", settingsPath+".json")
+	return nil
 }
 
 // initProfilesOnly initializes only profiles.json
 func initProfilesOnly() {
-	basePath := getOutputPath()
+	exitOnInitError(runInitProfiles(os.Stdout, os.Stderr))
+}
+
+func runInitProfiles(stdout, stderr io.Writer) error {
+	basePath, err := prepareOutputDir()
+	if err != nil {
+		return err
+	}
 
 	profilesFile := getDefaultProfiles()
 	profilePath := basePath + "profiles"
-	utils.SaveJson(&profilesFile, profilePath)
+	if err := utils.SaveJsonWithError(&profilesFile, profilePath); err != nil {
+		return fmt.Errorf("writing profiles file: %w", err)
+	}
 
 	// Output as JSON
 	result := map[string]interface{}{
@@ -346,12 +404,12 @@ func initProfilesOnly() {
 
 	jsonOutput, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating JSON output: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating JSON output: %w", err)
 	}
 
-	fmt.Println(string(jsonOutput))
-	fmt.Fprintf(os.Stderr, "\nProfiles file created (v%s): %s\n", profilesFile.Version, profilePath+".json")
+	fmt.Fprintln(stdout, string(jsonOutput))
+	fmt.Fprintf(stderr, "\nProfiles file created (v%s): %s\n", profilesFile.Version, profilePath+".json")
+	return nil
 }
 
 // initAppInteractive runs init in interactive mode (legacy behavior)
@@ -364,7 +422,7 @@ func initAppInteractive() {
 		fmt.Fprintln(os.Stderr, "")
 	}
 
-	basePath := getOutputPath()
+	basePath := mustPrepareOutputDir()
 
 	// Create profiles (new v1.0 format)
 	profilesFile := getDefaultProfiles()
@@ -380,16 +438,16 @@ func initAppInteractive() {
 		ApiNotSecure:    insecureResult,
 	}
 
-	fmt.Println("Initialized successfully. Ensure environment variables are set:")
-	fmt.Println("  - OWLCTL_USERNAME, OWLCTL_PASSWORD, OWLCTL_URL")
-
 	settingsPath := basePath + "settings"
 	utils.SaveJson(&settings, settingsPath)
+
+	fmt.Println("Initialized successfully. Ensure environment variables are set:")
+	fmt.Println("  - OWLCTL_USERNAME, OWLCTL_PASSWORD, OWLCTL_URL")
 }
 
 // initSettingsInteractive initializes settings.json interactively
 func initSettingsInteractive() {
-	basePath := getOutputPath()
+	basePath := mustPrepareOutputDir()
 
 	pterm.DefaultInteractiveConfirm.DefaultText = "Allow insecure TLS?"
 	insecureResult, _ := pterm.DefaultInteractiveConfirm.Show()
