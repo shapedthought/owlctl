@@ -13,10 +13,12 @@ on:
   issues:
     types: [opened]  # 'assigned' dropped: it needs assignee_trigger and could never start Claude
 
-# One run at a time across the repo, with no parallel writers. A new trigger waits
-# for the running job instead of cancelling it.
+# One run at a time per issue/PR (each works on its own claude/ branch), so runs on
+# different issues no longer cancel each other's pending runs. A new trigger waits
+# for the running job instead of cancelling it. GitHub keeps only one PENDING run
+# per group, so a newer comment on the same issue/PR replaces a pending one.
 concurrency:
-  group: claude-${{ github.repository }}
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 # Nothing is granted by default; the job declares exactly what it needs.
@@ -54,7 +56,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -74,8 +76,8 @@ jobs:
           claude_args: |
             --max-turns 80
             --append-system-prompt "Before doing anything, read .github/claude/WRITER.md and follow it. Never read or implement from planning/."
-            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,LS,Bash(go build:*),Bash(go test:*),Bash(go vet:*),Bash(gofmt:*),Bash(go list:*),Bash(go doc:*),Bash(go env:*),Bash(go mod tidy:*),Bash(go mod download:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(wc:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git commit:*),Bash(git push:*),mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log"
-            --disallowedTools "WebFetch,WebSearch"
+            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,LS,Bash(go build:*),Bash(go test:*),Bash(go vet:*),Bash(gofmt:*),Bash(go list:*),Bash(go doc:*),Bash(go env:*),Bash(go mod tidy:*),Bash(go mod download:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(wc:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git commit:*),Bash(git push:*),Bash(git fetch:*),Bash(git merge:*),Bash(git merge-base:*),mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log"
+            --disallowedTools "WebFetch,WebSearch,Bash(git push --force:*),Bash(git push -f:*),Bash(git push --force-with-lease:*),Bash(git rebase:*),Bash(git reset:*)"
 
       # Claude pushes with the GitHub App / GITHUB_TOKEN, which doesn't trigger CI.
       # workflow_dispatch is the documented exception, so dispatch ci.yml on the branch.

@@ -258,7 +258,7 @@ See the [Imperative Mode Guide](imperative-mode.md) for complete documentation.
 #### 1. Export Existing Configuration
 
 ```bash
-# Export all resource types in one command (recommended for first-time setup)
+# Export all resource types (jobs, repos, SOBRs, encryption, KMS, config-backup) in one command (recommended for first-time setup)
 ./owlctl export --all -d infrastructure/
 
 # Or export per resource type (useful when you need overlay support or selective exports)
@@ -315,7 +315,7 @@ git push
 Before drift detection can work, owlctl needs a baseline. Every `apply` saves state automatically. For resources you haven't applied yet (repositories, SOBRs, encryption, KMS), take a snapshot first:
 
 ```bash
-# Snapshot all resource types at once (recommended)
+# Snapshot all resource types at once (repos, SOBRs, encryption, KMS, config-backup; jobs are baselined by 'job apply') (recommended)
 ./owlctl snapshot --all
 
 # Or snapshot per resource type
@@ -536,8 +536,7 @@ cp "$STATE" "$STATE.backup"
 rm "$STATE"
 
 # Re-snapshot resources
-./owlctl snapshot --all
-./owlctl config-backup snapshot          # Singleton — not included in snapshot --all
+./owlctl snapshot --all                  # Includes config-backup
 ```
 
 ### Resource Not Found (Exit Code 6)

@@ -106,8 +106,8 @@ owlctl supports declarative, infrastructure-as-code management for VBR resources
 | Config Backup (singleton) | `config-backup export` | `config-backup apply` | `config-backup snapshot` | `config-backup diff` |
 
 **Global commands (operate across all resource types at once):**
-- `owlctl export --all [-d <dir>] [--all-instances] [--from-state]` - Export every resource type into one folder per resource type under the output dir (`--all-instances` adds an `<instance>/` level). `--from-state` generates YAML offline from `state.json` without contacting VBR.
-- `owlctl snapshot --all [--all-instances]` - Snapshot every resource type (except jobs, which are declarative-managed) into `state.json` in one operation.
+- `owlctl export --all [-d <dir>] [--all-instances] [--from-state]` - Export every resource type, including the config-backup singleton (`config-backup/configuration-backup.yaml`), into one folder per resource type under the output dir (`--all-instances` adds an `<instance>/` level). `--from-state` generates YAML offline from `state.json` without contacting VBR.
+- `owlctl snapshot --all [--all-instances]` - Snapshot every resource type including config-backup (except jobs, which are declarative-managed) into `state.json` in one operation.
 
 **State inspection commands:**
 - `owlctl state list [--instance <name>]` - Table of all tracked resources (Instance, Name, Type, Origin, LastApplied)

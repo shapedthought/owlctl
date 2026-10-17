@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `owlctl export --all` and `owlctl snapshot --all` now include the configuration backup singleton: export writes `config-backup/configuration-backup.yaml`, and `export --from-state` maps `VBRConfigurationBackup` to `config-backup/` instead of `unknown/`. The export registry gains an `IsSingleton` flag; help text and docs no longer carry the "not included" caveats (#163)
+
 ### Fixed
 - `owlctl job apply` no longer sends `null` entries in `guestProcessing.guestCredentials.credentialsPerMachine` (a bare `-` in YAML), which VBR rejected with 400 "Credentials Per Machine must not be empty". Nulls are dropped; if nothing remains, the live job's value is kept on update, or the key is omitted on create (#147)
+- `owlctl init` (and `init settings` / `init profiles`) now creates `--output-dir` (mode 0700) if missing, and exits non-zero with an error naming the path or file if a directory or file can't be written, instead of printing "Initialized successfully" with nothing written. `utils.SaveJson`/`SaveData` no longer discard write errors, and `utils.SaveJsonWithError` returns them (#169)
 - `owlctl job apply` now honours `isDisabled` on create and update: VBR ignores it on POST/PUT, so apply reads the job's actual state back and calls `POST jobs/{id}/disable` or `/enable` when it differs. If VBR refuses (for example HTTP 400 for unscheduled jobs), apply prints a warning with VBR's message and exits non-zero instead of reporting success. `--dry-run` shows the planned enable/disable call. The enable/disable call is skipped, in apply and in dry-run, when `isDisabled` is set to `skip` for jobs in `remediation-config.yaml` (#186)
 
 ### Changed
