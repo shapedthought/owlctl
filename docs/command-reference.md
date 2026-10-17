@@ -146,7 +146,7 @@ exports/
 
 ```bash
 # Jobs
-owlctl job export <job-id> -o job.yaml          # Export single job
+owlctl job export <job-name|job-id> -o job.yaml # Export single job by name (exact match) or id
 owlctl job export --all -d jobs/                # Export all jobs
 owlctl job export <id> --as-overlay -o ov.yaml  # Export as overlay
 owlctl job export <id> --simplified -o job.yaml # Minimal format (legacy)

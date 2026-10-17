@@ -28,11 +28,17 @@ var (
 )
 
 var exportCmd = &cobra.Command{
-	Use:   "export [job-id]",
+	Use:   "export [job-name|job-id]",
 	Short: "Export VBR jobs to declarative YAML format",
 	Long: `Export existing VBR backup jobs to declarative YAML configuration files.
 
+Takes a job name (exact, case-sensitive match) or a job id. If a name matches
+more than one job, the command fails and lists the ids; pass the id instead.
+
 Examples:
+  # Export single job by name
+  owlctl export "Backup Job 1"
+
   # Export single job to stdout
   owlctl export 57b3baab-6237-41bf-add7-db63d41d984c
 
@@ -63,17 +69,72 @@ Examples:
 			exportAllJobs(profile)
 		} else {
 			if len(args) == 0 {
-				log.Fatal("Job ID is required. Use --all to export all jobs.")
+				log.Fatal("Job name or ID is required. Use --all to export all jobs.")
 			}
 			exportSingleJob(args[0], profile)
 		}
 	},
 }
 
-func exportSingleJob(jobID string, profile models.Profile) {
+// jobListItem is the summary entry returned by the VBR jobs list endpoint.
+type jobListItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+var jobUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// resolveJobRef resolves a job name or id to the full job JSON. A UUID-shaped
+// argument is tried as an id first, then falls back to an exact, case-sensitive
+// name match. getJob fetches a job by id; listJobs returns the job summaries.
+func resolveJobRef(ref string, getJob func(id string) (json.RawMessage, error), listJobs func() ([]jobListItem, error)) (json.RawMessage, error) {
+	if jobUUIDPattern.MatchString(ref) {
+		if raw, err := getJob(ref); err == nil {
+			return raw, nil
+		}
+	}
+
+	jobs, err := listJobs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list jobs: %w", err)
+	}
+
+	var ids []string
+	for _, j := range jobs {
+		if j.Name == ref {
+			ids = append(ids, j.ID)
+		}
+	}
+
+	switch len(ids) {
+	case 0:
+		return nil, fmt.Errorf("job %q not found", ref)
+	case 1:
+		raw, err := getJob(ids[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch job %q: %w", ref, err)
+		}
+		return raw, nil
+	default:
+		return nil, fmt.Errorf("job name %q is ambiguous, %d jobs match (ids: %s); specify the job id instead", ref, len(ids), strings.Join(ids, ", "))
+	}
+}
+
+func exportSingleJob(jobRef string, profile models.Profile) {
 	// Fetch job from VBR as raw JSON (preserves all fields regardless of job type)
-	endpoint := fmt.Sprintf("jobs/%s", jobID)
-	rawData := vhttp.GetData[json.RawMessage](endpoint, profile)
+	rawData, err := resolveJobRef(jobRef,
+		func(id string) (json.RawMessage, error) {
+			return vhttp.GetDataWithError[json.RawMessage](fmt.Sprintf("jobs/%s", id), profile)
+		},
+		func() ([]jobListItem, error) {
+			resp, err := vhttp.GetDataWithError[struct {
+				Data []jobListItem `json:"data"`
+			}]("jobs", profile)
+			return resp.Data, err
+		})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Extract name and ID from raw JSON
 	var meta struct {
@@ -504,11 +565,17 @@ func addExportFlags(cmd *cobra.Command) {
 
 // jobExportCmd is the preferred location under 'owlctl job export'
 var jobExportCmd = &cobra.Command{
-	Use:   "export [job-id]",
+	Use:   "export [job-name|job-id]",
 	Short: "Export VBR jobs to declarative YAML format",
 	Long: `Export existing VBR backup jobs to declarative YAML configuration files.
 
+Takes a job name (exact, case-sensitive match) or a job id. If a name matches
+more than one job, the command fails and lists the ids; pass the id instead.
+
 Examples:
+  # Export single job by name
+  owlctl job export "Backup Job 1"
+
   # Export single job to stdout
   owlctl job export 57b3baab-6237-41bf-add7-db63d41d984c
 
