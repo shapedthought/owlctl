@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-17
+
+> **Heads-up for script authors:** the `--dry-run` output format changed (#187). `job apply` and the generic apply commands now share one format: "No changes detected. Resource is already in desired state.", change lines `  <SEVERITY> ~ path: old -> new` (no "(current)/(new)"), "N field(s) would be changed.", and no truncation. Use `--output json` for machine parsing.
+
 ### Added
 - `owlctl job export` (and the deprecated top-level `export`) now accepts a job name as well as an id. Names match exactly and case-sensitively; no match exits non-zero with `job "<name>" not found`, and a name shared by several jobs exits non-zero listing the ids. A UUID-shaped argument is tried as an id first, then as a name (#188)
 - `owlctl --version` and an `owlctl version` subcommand (version, commit, build date, Go version). Values default to `dev`/`none`/`unknown` and are injected at build time with `-X github.com/shapedthought/owlctl/cmd.version`, `.commit` and `.date`, so releases no longer need a version-bump commit. `utils` → Check Version now compares against the injected version, reports a development build for `dev`, and no longer panics on an unexpected GitHub response such as a rate limit (#182)
