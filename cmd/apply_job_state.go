@@ -86,8 +86,8 @@ func applyJobState(spec map[string]interface{}, id string, profile models.Profil
 
 // plannedJobState describes the enable/disable call apply would make, for
 // --dry-run. existing is nil when the job does not exist yet (VBR creates jobs
-// enabled). Returns "" when no call is needed.
-func plannedJobState(spec, existing map[string]interface{}) string {
+// enabled) and id is then empty. Returns "" when no call is needed.
+func plannedJobState(spec, existing map[string]interface{}, id string) string {
 	want, ok := desiredJobDisabled(spec)
 	if !ok {
 		return ""
@@ -99,5 +99,8 @@ func plannedJobState(spec, existing map[string]interface{}) string {
 	if actual == want {
 		return ""
 	}
-	return fmt.Sprintf("POST jobs/{id}/%s (isDisabled: %t -> %t)", jobStateVerb(want), actual, want)
+	if existing == nil || id == "" {
+		return fmt.Sprintf("POST jobs/<new id>/%s (after create)", jobStateVerb(want))
+	}
+	return fmt.Sprintf("POST jobs/%s/%s (isDisabled: %t -> %t)", id, jobStateVerb(want), actual, want)
 }

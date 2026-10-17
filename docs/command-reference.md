@@ -463,6 +463,7 @@ owlctl job apply --group sql-tier --target dr
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Preview changes without applying |
+| `--output json` | With `--dry-run`: print the preview as one JSON document on stdout (not with `--group`) |
 | `-o, --overlay <file>` | Apply with configuration overlay |
 | `--group <name>` | Apply all specs in named group (from `owlctl.yaml`) |
 | `--env <name>` | Legacy flag; supported for backwards compatibility. Prefer `--group`. |

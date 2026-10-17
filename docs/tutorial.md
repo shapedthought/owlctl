@@ -61,10 +61,16 @@ owlctl job apply jobs/db-backup.yaml --dry-run
 ```
 
 ```
-Applying: DB Backup
+=== Dry Run Mode ===
+Resource: DB Backup (VBRJob)
+Action: Would UPDATE existing resource
 
-  storage.retentionPolicy.quantity: 14 → 30
+Changes that would be applied:
+  CRITICAL ~ storage.retentionPolicy.quantity: 14 -> 30
 
+1 field(s) would be changed.
+
+=== End Dry Run ===
 No changes made. Remove --dry-run flag to apply.
 ```
 

@@ -116,7 +116,7 @@ func TestPlannedJobStateForDryRun_HonoursSkipPolicy(t *testing.T) {
 	t.Setenv("HOME", dir)
 	spec := map[string]interface{}{"isDisabled": true}
 
-	if plan := plannedJobStateForDryRun(spec, nil); plan == "" {
+	if plan := plannedJobStateForDryRun(spec, nil, ""); plan == "" {
 		t.Fatal("expected a plan without remediation config")
 	}
 
@@ -124,7 +124,7 @@ func TestPlannedJobStateForDryRun_HonoursSkipPolicy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "remediation-config.yaml"), []byte(cfgYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if plan := plannedJobStateForDryRun(spec, nil); plan != "" {
+	if plan := plannedJobStateForDryRun(spec, nil, ""); plan != "" {
 		t.Fatalf("expected no plan with skip policy, got %q", plan)
 	}
 }

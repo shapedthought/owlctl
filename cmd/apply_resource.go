@@ -62,9 +62,21 @@ type ResourceApplyConfig struct {
 	PostApply func(spec map[string]interface{}, id string, profile models.Profile) error
 
 	// PlanPostApply optionally describes the PostApply action for --dry-run.
-	// existing is nil when the resource would be created. Returns "" for no action.
-	PlanPostApply func(spec, existing map[string]interface{}) string
+	// existing is nil when the resource would be created, and id is then empty
+	// (the new id is not known yet). Returns "" for no action.
+	PlanPostApply func(spec, existing map[string]interface{}, id string) string
+
+	// SeverityMap assigns a severity to each change shown by --dry-run. Fields it
+	// does not list, or a nil map, report INFO.
+	SeverityMap SeverityMap
 }
+
+// alreadyReportedError wraps an error that has already been printed to the user
+// (as a "Warning:" line), so the caller can exit non-zero without printing it again.
+type alreadyReportedError struct{ err error }
+
+func (e alreadyReportedError) Error() string { return e.err.Error() }
+func (e alreadyReportedError) Unwrap() error { return e.err }
 
 // ApplyResult contains the result of an apply operation
 type ApplyResult struct {
@@ -161,9 +173,9 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 
 		if dryRun {
 			// Dry-run mode: show what would be created
-			printDryRunCreate(spec.Metadata.Name, cfg.Kind, cleanedSpec)
+			plan := plannedPostApply(cfg, postApplySpec(spec.Spec, remediationCfg, cfg.Kind, nil), nil, "")
+			emitDryRun(newDryRunCreateReport(spec.Metadata.Name, cfg.Kind, cleanedSpec, plan))
 			result.Action = "would-create"
-			printPlannedPostApply(cfg, postApplySpec(spec.Spec, remediationCfg, cfg.Kind, nil), nil)
 			return result
 		}
 
@@ -233,9 +245,9 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 
 		if dryRun {
 			// Dry-run mode: show what would change (including skipped)
-			printDryRunUpdateWithSkipped(spec.Metadata.Name, cfg.Kind, result.Changes, result.Skipped)
+			plan := plannedPostApply(cfg, postApplySpec(spec.Spec, remediationCfg, cfg.Kind, result.Skipped), existingMap, existingID)
+			emitDryRun(newDryRunUpdateReport(spec.Metadata.Name, cfg.Kind, newDryRunChanges(result.Changes, cfg.SeverityMap), result.Skipped, plan))
 			result.Action = "would-update"
-			printPlannedPostApply(cfg, postApplySpec(spec.Spec, remediationCfg, cfg.Kind, result.Skipped), existingMap)
 			return result
 		}
 
@@ -261,6 +273,7 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 		postApplyErr = cfg.PostApply(postApplySpec(spec.Spec, remediationCfg, cfg.Kind, result.Skipped), result.ResourceID, profile)
 		if postApplyErr != nil {
 			fmt.Printf("Warning: %v\n", postApplyErr)
+			postApplyErr = alreadyReportedError{postApplyErr}
 		}
 	}
 
@@ -305,22 +318,21 @@ func postApplySpec(spec map[string]interface{}, remCfg *remediation.Config, kind
 
 // plannedJobStateForDryRun is the dry-run plan for a job's enable/disable call,
 // honouring remediation skip policy the same way a real apply does.
-func plannedJobStateForDryRun(spec, existing map[string]interface{}) string {
+func plannedJobStateForDryRun(spec, existing map[string]interface{}, id string) string {
 	remCfg, err := remediation.LoadConfig()
 	if err != nil {
 		remCfg = nil
 	}
-	return plannedJobState(postApplySpec(spec, remCfg, jobApplyConfig.Kind, nil), existing)
+	return plannedJobState(postApplySpec(spec, remCfg, jobApplyConfig.Kind, nil), existing, id)
 }
 
-// printPlannedPostApply prints the dry-run preview of the config's PostApply action.
-func printPlannedPostApply(cfg ResourceApplyConfig, spec, existing map[string]interface{}) {
+// plannedPostApply returns the dry-run description of the config's PostApply
+// action, or "" when there is none.
+func plannedPostApply(cfg ResourceApplyConfig, spec, existing map[string]interface{}, id string) string {
 	if cfg.PlanPostApply == nil {
-		return
+		return ""
 	}
-	if plan := cfg.PlanPostApply(spec, existing); plan != "" {
-		fmt.Printf("  Would call: %s\n", plan)
-	}
+	return cfg.PlanPostApply(spec, existing, id)
 }
 
 // extractFieldNames returns just the field paths from a list of changes
