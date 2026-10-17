@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `owlctl job export` (and the deprecated top-level `export`) now accepts a job name as well as an id. Names match exactly and case-sensitively; no match exits non-zero with `job "<name>" not found`, and a name shared by several jobs exits non-zero listing the ids. A UUID-shaped argument is tried as an id first, then as a name (#188)
+- `owlctl --version` and an `owlctl version` subcommand (version, commit, build date, Go version). Values default to `dev`/`none`/`unknown` and are injected at build time with `-X github.com/shapedthought/owlctl/cmd.version`, `.commit` and `.date`, so releases no longer need a version-bump commit. `utils` → Check Version now compares against the injected version, reports a development build for `dev`, and no longer panics on an unexpected GitHub response such as a rate limit (#182)
 - `examples/pipelines/lab-verification/`: Azure DevOps example pipeline that verifies owlctl against a lab VBR (login, get, export, `job apply --dry-run` drift check, optional guarded apply cycle and backup run), with tests that parse the YAML and check for IPs and secrets (#167)
 - `owlctl export --all` and `owlctl snapshot --all` now include the configuration backup singleton: export writes `config-backup/configuration-backup.yaml`, and `export --from-state` maps `VBRConfigurationBackup` to `config-backup/` instead of `unknown/`. The export registry gains an `IsSingleton` flag; help text and docs no longer carry the "not included" caveats (#163)
 - `--output json` for `job apply`, `repo apply`, `repo sobr-apply`, `encryption kms-apply` and `config-backup apply` with `--dry-run`: prints `{"resource","kind","action","changes":[{"path","old","new","severity"}],"skipped","postApply"}` on stdout, with banners and warnings on stderr. Requires `--dry-run`; not supported with `--group` (#187)
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `--dry-run` now uses one shared printer for `job apply` and all generic apply commands: one `No changes detected. Resource is already in desired state.` line, one change format `  <SEVERITY> <~|+|-> <path>: <old> -> <new>` (severity from the resource's drift map, INFO if none), and one `N field(s) would be changed.` summary. String values are no longer truncated at 47 characters in apply output; `job diff` and `job plan` output is unchanged. `job apply --dry-run` drops the box banner, the `(current)`/`(new)` labels, the category headings and the `Summary:` line (#187)
+- Removed the unused root flag `-t, --toggle` ("Help message for toggle"), a leftover from the Cobra scaffold (#182)
 - README changelog table now includes 1.2.1, 1.2.2 and 1.3.0 and links to `CHANGELOG.md` as the full record (#183)
 - `examples/pipelines/templates/install-owlctl.yml` now defaults `owlctlVersion` to `v1.3.0` (#170)
 - New `CONTRIBUTING.md` with a **Releasing** checklist, including updating the README changelog table (#183)

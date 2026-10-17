@@ -5,7 +5,7 @@ Before changing anything, read [`.github/claude/WRITER.md`](.github/claude/WRITE
 ## Releasing
 
 1. **CHANGELOG**: rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` (date the section) and add a fresh empty `## [Unreleased]` above it.
-2. **Version reference**: bump the version string in `cmd/utils.go` (the update check). This step goes away once #182 lands.
+2. **Version reference**: no version-bump commit is needed. The version is injected at build time through ldflags (`-X github.com/shapedthought/owlctl/cmd.version=<tag>`, plus `cmd.commit` and `cmd.date`), and local builds report `dev`. The `release.yml` change that passes these ldflags lands in a separate PR (#182); until it merges, release binaries still report `dev`.
 3. **README**: add a row for the new version to the "Change Log" table in `README.md`. Use a bold headline and a short summary taken from `CHANGELOG.md` only.
 4. **Tag and release**: push an annotated tag, then create the release from it. Do not create a draft: the release workflow runs on `release: created`.
 
