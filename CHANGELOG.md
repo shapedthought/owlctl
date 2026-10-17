@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `owlctl init` (and `init settings` / `init profiles`) now creates `--output-dir` (mode 0700) if missing, and exits non-zero with an error naming the path or file if a directory or file can't be written, instead of printing "Initialized successfully" with nothing written. `utils.SaveJson`/`SaveData` no longer discard write errors, and `utils.SaveJsonWithError` returns them (#169)
 - `owlctl job apply` now honours `isDisabled` on create and update: VBR ignores it on POST/PUT, so apply reads the job's actual state back and calls `POST jobs/{id}/disable` or `/enable` when it differs. If VBR refuses (for example HTTP 400 for unscheduled jobs), apply prints a warning with VBR's message and exits non-zero instead of reporting success. `--dry-run` shows the planned enable/disable call. The enable/disable call is skipped, in apply and in dry-run, when `isDisabled` is set to `skip` for jobs in `remediation-config.yaml` (#186)
 
 ### Changed
