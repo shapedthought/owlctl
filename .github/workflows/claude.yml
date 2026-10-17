@@ -13,10 +13,12 @@ on:
   issues:
     types: [opened]  # 'assigned' dropped: it needs assignee_trigger and could never start Claude
 
-# One run at a time across the repo, with no parallel writers. A new trigger waits
-# for the running job instead of cancelling it.
+# One run at a time per issue/PR (each works on its own claude/ branch), so runs on
+# different issues no longer cancel each other's pending runs. A new trigger waits
+# for the running job instead of cancelling it. GitHub keeps only one PENDING run
+# per group, so a newer comment on the same issue/PR replaces a pending one.
 concurrency:
-  group: claude-${{ github.repository }}
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 # Nothing is granted by default; the job declares exactly what it needs.
