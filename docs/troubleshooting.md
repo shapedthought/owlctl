@@ -24,8 +24,9 @@ Start troubleshooting with these quick checks:
 
 ```bash
 # 1. Check owlctl version
-owlctl utils
-# Select "Check Version"
+owlctl --version
+# or: owlctl version (also prints commit, build date and Go version)
+# To compare against the latest release: owlctl utils, select "Check Version"
 
 # 2. Verify environment variables
 echo $OWLCTL_USERNAME

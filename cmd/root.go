@@ -94,7 +94,6 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().StringVar(&instanceFlag, "instance", "", "Named instance from owlctl.yaml (sets URL, credentials, product)")
 	rootCmd.PersistentFlags().StringVar(&targetFlag, "target", "", "Named VBR target from owlctl.yaml (deprecated, use --instance)")
 }
