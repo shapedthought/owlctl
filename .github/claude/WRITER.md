@@ -33,4 +33,5 @@ If two of these disagree, the higher one wins. Note the disagreement in the PR d
 ## Never
 - Never commit secrets, tokens, `settings.json`, `profiles.json`, `headers.json`, `state.json` from a real server, or `.env` files.
 - There are **no lab or Veeam credentials** here. Don't ask for them, invent them, or try to reach a Veeam server. Code that needs a live VBR is verified later by the lab pipeline (#167), not by you.
-- Don't merge, force-push, rebase shared branches, or change workflows, repo settings or secrets unless the issue explicitly asks for it.
+- Don't merge PRs, force-push, rebase shared branches, or change workflows, repo settings or secrets unless the issue explicitly asks for it.
+- To resolve conflicts with master: `git fetch origin master && git merge origin/master`, resolve, commit, and push normally. Never rebase or force-push. In a CHANGELOG conflict, keep every entry.
