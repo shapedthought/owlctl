@@ -1,4 +1,5 @@
 *.yaml
+!cmd/testdata/*.yaml
 !examples/*.yaml
 !examples/**/*.yaml
 !test-demo/*.yaml

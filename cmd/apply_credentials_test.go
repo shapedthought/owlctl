@@ -8,9 +8,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func loadCredsFixture(t *testing.T) map[string]interface{} {
+func loadCredsFixture(t *testing.T, name string) map[string]interface{} {
 	t.Helper()
-	data, err := os.ReadFile("testdata/job-credentials-per-machine-null.yaml")
+	data, err := os.ReadFile("testdata/" + name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func existingWithCreds(list []interface{}) map[string]interface{} {
 }
 
 func TestPrepareJobPayload_NullCredentialsPerMachine_CreateOmitsKey(t *testing.T) {
-	spec := loadCredsFixture(t)
+	spec := loadCredsFixture(t, "job-credentials-per-machine-null.yaml")
 	if l := credsGC(spec)["credentialsPerMachine"].([]interface{}); len(l) != 1 || l[0] != nil {
 		t.Fatalf("fixture should parse to [nil], got %v", l)
 	}
@@ -51,7 +51,7 @@ func TestPrepareJobPayload_NullCredentialsPerMachine_CreateOmitsKey(t *testing.T
 
 func TestPrepareJobPayload_NullCredentialsPerMachine_UpdateBackfills(t *testing.T) {
 	live := map[string]interface{}{"id": "cred-1"}
-	out, _ := prepareJobPayload(loadCredsFixture(t), existingWithCreds([]interface{}{live}))
+	out, _ := prepareJobPayload(loadCredsFixture(t, "job-credentials-per-machine-null.yaml"), existingWithCreds([]interface{}{live}))
 	want := []interface{}{live}
 	if got := credsGC(out)["credentialsPerMachine"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -59,7 +59,7 @@ func TestPrepareJobPayload_NullCredentialsPerMachine_UpdateBackfills(t *testing.
 }
 
 func TestPrepareJobPayload_NullCredentialsPerMachine_EmptyExistingOmits(t *testing.T) {
-	out, _ := prepareJobPayload(loadCredsFixture(t), existingWithCreds([]interface{}{}))
+	out, _ := prepareJobPayload(loadCredsFixture(t, "job-credentials-per-machine-null.yaml"), existingWithCreds([]interface{}{}))
 	if _, ok := credsGC(out)["credentialsPerMachine"]; ok {
 		t.Error("key should be omitted, never []")
 	}
@@ -67,8 +67,7 @@ func TestPrepareJobPayload_NullCredentialsPerMachine_EmptyExistingOmits(t *testi
 
 func TestPrepareJobPayload_MixedCredentialsPerMachineKeepsValid(t *testing.T) {
 	entry := map[string]interface{}{"hostName": "vm1", "credentials": map[string]interface{}{"id": "c"}}
-	spec := loadCredsFixture(t)
-	credsGC(spec)["credentialsPerMachine"] = []interface{}{nil, entry, nil}
+	spec := loadCredsFixture(t, "job-credentials-per-machine-mixed.yaml")
 	out, _ := prepareJobPayload(spec, map[string]interface{}{})
 	want := []interface{}{entry}
 	if got := credsGC(out)["credentialsPerMachine"]; !reflect.DeepEqual(got, want) {
