@@ -11,6 +11,11 @@ type ResourceExporter struct {
 	// FolderName is the output subdirectory in the export tree (e.g. "jobs")
 	FolderName string
 
+	// IsSingleton marks a resource with exactly one instance per server (no name,
+	// no --all). Its ExportAll writes a single fixed-name file into outDir and its
+	// SnapshotAll snapshots that one resource.
+	IsSingleton bool
+
 	// ExportAll writes all resources of this type to outDir as YAML files.
 	// nil means export is not supported for this resource type.
 	ExportAll func(outDir string, profile models.Profile) error

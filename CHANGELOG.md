@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `owlctl export --all` and `owlctl snapshot --all` now include the configuration backup singleton: export writes `config-backup/configuration-backup.yaml`, and `export --from-state` maps `VBRConfigurationBackup` to `config-backup/` instead of `unknown/`. The export registry gains an `IsSingleton` flag; help text and docs no longer carry the "not included" caveats (#163)
+
 ### Fixed
 - `owlctl job apply` now honours `isDisabled` on create and update: VBR ignores it on POST/PUT, so apply reads the job's actual state back and calls `POST jobs/{id}/disable` or `/enable` when it differs. If VBR refuses (for example HTTP 400 for unscheduled jobs), apply prints a warning with VBR's message and exits non-zero instead of reporting success. `--dry-run` shows the planned enable/disable call. The enable/disable call is skipped, in apply and in dry-run, when `isDisabled` is set to `skip` for jobs in `remediation-config.yaml` (#186)
 

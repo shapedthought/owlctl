@@ -38,6 +38,13 @@ func init() {
 				ExportAll:   exportAllKmsToDir,
 				SnapshotAll: snapshotAllKmsForRegistry,
 			},
+			{
+				Kind:        "VBRConfigurationBackup",
+				FolderName:  "config-backup",
+				IsSingleton: true,
+				ExportAll:   exportConfigBackupToDir,
+				SnapshotAll: snapshotConfigBackupForRegistry,
+			},
 		},
 	})
 }
