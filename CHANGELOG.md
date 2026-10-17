@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped the default owlctl install pin to `v1.4.0` in `examples/pipelines/templates/install-owlctl.yml` and `examples/pipelines/lab-verification/lab-verification.yml` (and its README parameter table), following the v1.4.0 release (#200).
+
 ## [1.4.0] - 2026-10-17
 
 > **Heads-up for script authors:** the `--dry-run` output format changed (#187). `job apply` and the generic apply commands now share one format: "No changes detected. Resource is already in desired state.", change lines `  <SEVERITY> ~ path: old -> new` (no "(current)/(new)"), "N field(s) would be changed.", and no truncation. Use `--output json` for machine parsing.

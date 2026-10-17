@@ -22,7 +22,7 @@ parameters:
     default: lab-hardened-repo
   - name: owlctlVersion
     type: string
-    default: v1.3.0
+    default: v1.4.0
   - name: runApplyCycle
     type: boolean
     default: false
