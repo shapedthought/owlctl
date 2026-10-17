@@ -147,6 +147,9 @@ func applyJob(configFile string) {
 			fmt.Println("⚠ Job not found in VBR - will be created")
 			fmt.Println()
 			showNewJobSummary(finalSpec)
+			if plan := plannedJobStateForDryRun(finalSpec.Spec, nil); plan != "" {
+				fmt.Printf("\nWould call: %s\n", plan)
+			}
 		} else {
 			// Job exists - show diff
 			fmt.Printf("✓ Current job found in VBR (ID: %s)\n", currentID)
@@ -157,6 +160,9 @@ func applyJob(configFile string) {
 				log.Fatalf("Failed to unmarshal current job: %v", err)
 			}
 			showJobDiff(finalSpec, currentMap)
+			if plan := plannedJobStateForDryRun(finalSpec.Spec, currentMap); plan != "" {
+				fmt.Printf("\nWould call: %s\n", plan)
+			}
 		}
 
 		fmt.Println("\n=== End Dry Run ===")
@@ -291,6 +297,17 @@ func applyGroup(group string) {
 				fmt.Printf("  Found in VBR — would be updated\n")
 				result.Action = "would-update"
 			}
+			var existingMap map[string]interface{}
+			if existingRaw != nil {
+				if err := json.Unmarshal(existingRaw, &existingMap); err != nil {
+					result.Error = fmt.Errorf("failed to parse current job: %w", err)
+					results = append(results, result)
+					continue
+				}
+			}
+			if plan := plannedJobStateForDryRun(mergedSpec.Spec, existingMap); plan != "" {
+				fmt.Printf("  Would call: %s\n", plan)
+			}
 			fmt.Println()
 		} else {
 			// Apply the job
@@ -379,6 +396,8 @@ var jobApplyConfig = ResourceApplyConfig{
 	Mode:           ApplyCreateOrUpdate,
 	FetchCurrent:   fetchCurrentJob,
 	PreparePayload: prepareJobPayload,
+	PostApply:      applyJobState,
+	PlanPostApply:  plannedJobState,
 }
 
 // fetchCurrentJob retrieves a job by name from VBR.
