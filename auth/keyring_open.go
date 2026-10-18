@@ -19,7 +19,8 @@ import (
 // or hung past the timeout) storage is disabled instead of failing; a backend
 // named explicitly fails with an error.
 func NewTokenManager(debug bool) (*TokenManager, error) {
-	choice, err := chooseKeyring(keyringEnvFunc())
+	kenv := keyringEnvFunc()
+	choice, err := chooseKeyring(kenv)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,7 @@ func NewTokenManager(debug bool) (*TokenManager, error) {
 		AllowedBackends: []keyring.BackendType{choice.backend},
 	}
 
-	tm := &TokenManager{debug: debug, backend: choice.name, timeout: keyringTimeout()}
+	tm := &TokenManager{debug: debug, backend: choice.name, timeout: keyringTimeout(kenv.interactive)}
 	if choice.backend == keyring.FileBackend {
 		// The file backend may legitimately wait on the user typing a passphrase.
 		tm.timeout = 0

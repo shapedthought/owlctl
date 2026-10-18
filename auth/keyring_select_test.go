@@ -182,21 +182,25 @@ func TestNewTokenManager_InvalidValue(t *testing.T) {
 
 func TestKeyringTimeout_Parsing(t *testing.T) {
 	tests := []struct {
-		val  string
-		want time.Duration
+		val         string
+		interactive bool
+		want        time.Duration
 	}{
-		{"", 5 * time.Second},
-		{"250ms", 250 * time.Millisecond},
-		{"10", 10 * time.Second},
-		{"1.5", 1500 * time.Millisecond},
-		{"0", 5 * time.Second},
-		{"-3s", 5 * time.Second},
-		{"junk", 5 * time.Second},
+		{"", false, 5 * time.Second},
+		{"", true, 60 * time.Second},
+		{"250ms", false, 250 * time.Millisecond},
+		{"250ms", true, 250 * time.Millisecond},
+		{"10", true, 10 * time.Second},
+		{"1.5", false, 1500 * time.Millisecond},
+		{"0", false, 5 * time.Second},
+		{"0", true, 60 * time.Second},
+		{"-3s", false, 5 * time.Second},
+		{"junk", true, 60 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Setenv(KeyringTimeoutEnvVar, tt.val)
-		if got := keyringTimeout(); got != tt.want {
-			t.Errorf("keyringTimeout(%q) = %v, want %v", tt.val, got, tt.want)
+		if got := keyringTimeout(tt.interactive); got != tt.want {
+			t.Errorf("keyringTimeout(%q, interactive=%v) = %v, want %v", tt.val, tt.interactive, got, tt.want)
 		}
 	}
 }

@@ -219,7 +219,7 @@ $env:OWLCTL_SETTINGS_PATH = "$HOME\.owlctl\"  # Optional
 | `OWLCTL_SETTINGS_PATH` | No | Config file directory (default: current directory) |
 | `OWLCTL_FILE_KEY` | No | File keyring password (for non-interactive systems) |
 | `OWLCTL_KEYRING` | No | Token storage backend: `auto` (default), `keychain`, `secret-service`, `wincred`, `file`, `none` |
-| `OWLCTL_KEYRING_TIMEOUT` | No | Keyring operation timeout (default `5s`) |
+| `OWLCTL_KEYRING_TIMEOUT` | No | Keyring operation timeout (default `60s` on an interactive terminal, `5s` otherwise) |
 
 *Not required if `OWLCTL_TOKEN` is set
 
@@ -279,8 +279,8 @@ An unknown value is an error. Naming a backend explicitly overrides the non-inte
 Keychain unlock dialogs and file-keyring passphrase prompts cannot be answered from scripts, CI, ssh sessions, IDE tasks or `< /dev/null`, and used to make owlctl hang. Now:
 
 - With the default `auto`, any non-interactive session skips every backend that could prompt and authenticates from the environment.
-- Every keyring read, write and delete has a timeout (default 5 seconds; set `OWLCTL_KEYRING_TIMEOUT` to a Go duration such as `15s` or a number of seconds). On timeout owlctl prints one line to stderr naming `OWLCTL_TOKEN` and `OWLCTL_KEYRING=none`, stops using the keyring for the rest of the process, and falls back to the environment credentials.
-- If you need longer than 5 seconds to answer an interactive unlock dialog, raise `OWLCTL_KEYRING_TIMEOUT`. The file keyring is exempt, since it waits for your passphrase.
+- Every keyring read, write and delete has a timeout (default 60 seconds when stdin is an interactive terminal and `CI`/`TF_BUILD` are not set, 5 seconds otherwise; set `OWLCTL_KEYRING_TIMEOUT` to a Go duration such as `15s` or a number of seconds). On timeout owlctl prints one line to stderr naming `OWLCTL_TOKEN` and `OWLCTL_KEYRING=none`, stops using the keyring for the rest of the process, and falls back to the environment credentials.
+- The 60 second interactive default leaves time to approve a macOS Keychain dialog; raise `OWLCTL_KEYRING_TIMEOUT` if you need longer. The file keyring is exempt, since it waits for your passphrase.
 
 #### macOS Keychain
 

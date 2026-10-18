@@ -21,7 +21,11 @@ const (
 	// FileKeyEnvVar holds the file keyring passphrase.
 	FileKeyEnvVar = "OWLCTL_FILE_KEY"
 
+	// defaultKeyringTimeout applies when nobody can respond to a prompt.
 	defaultKeyringTimeout = 5 * time.Second
+	// interactiveKeyringTimeout applies on an interactive terminal, leaving time
+	// to approve a macOS Keychain dialog.
+	interactiveKeyringTimeout = 60 * time.Second
 )
 
 // Valid OWLCTL_KEYRING values.
@@ -144,11 +148,15 @@ func explicitChoice(e keyringEnv, b keyring.BackendType, name string) (keyringCh
 
 // keyringTimeout returns the keyring operation timeout. The value is a Go
 // duration ("10s") or a bare number of seconds. Invalid or non-positive values
-// fall back to the default.
-func keyringTimeout() time.Duration {
+// fall back to the default: 60s when a user can respond (interactive), else 5s.
+func keyringTimeout(interactive bool) time.Duration {
+	def := defaultKeyringTimeout
+	if interactive {
+		def = interactiveKeyringTimeout
+	}
 	v := strings.TrimSpace(os.Getenv(KeyringTimeoutEnvVar))
 	if v == "" {
-		return defaultKeyringTimeout
+		return def
 	}
 	if d, err := time.ParseDuration(v); err == nil && d > 0 {
 		return d
@@ -156,7 +164,7 @@ func keyringTimeout() time.Duration {
 	if n, err := strconv.ParseFloat(v, 64); err == nil && n > 0 {
 		return time.Duration(n * float64(time.Second))
 	}
-	return defaultKeyringTimeout
+	return def
 }
 
 var errKeyringDisabled = errors.New("token storage disabled (OWLCTL_KEYRING=none or non-interactive session)")

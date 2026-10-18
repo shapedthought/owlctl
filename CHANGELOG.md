@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `owlctl license install --file <path.lic>`: strips a leading UTF-8 BOM, base64-encodes the file and POSTs `{"license": "<base64>"}` to `license/install`. `--dry-run` validates the file and prints size, BOM found and base64 length without calling VBR or printing licence content. The body matches VBR's `LicenseInstallationSpec` (required `license`, base64 string) (#210).
 
 - `OWLCTL_KEYRING=auto|keychain|secret-service|wincred|file|none` selects the token storage backend. `none` never opens a keyring; `file` without a terminal and without `OWLCTL_FILE_KEY` fails immediately instead of prompting; unknown values are an error (#214).
-- `OWLCTL_KEYRING_TIMEOUT` (default 5s) bounds every keyring read, write and delete (#214, #209).
+- `OWLCTL_KEYRING_TIMEOUT` bounds every keyring read, write and delete. The default is 60s on an interactive terminal (stdin is a TTY, `CI`/`TF_BUILD` unset), so there is time to approve a macOS Keychain dialog, and 5s otherwise (#214, #209).
 
 ### Changed
 
