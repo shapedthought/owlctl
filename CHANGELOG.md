@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `owlctl license install --file <path.lic>`: strips a leading UTF-8 BOM, base64-encodes the file and POSTs `{"license": "<base64>"}` to `license/install`. `--dry-run` validates the file and prints size, BOM found and base64 length without calling VBR or printing licence content. The `license` body field name is not yet verified against a live VBR (#210).
+- `owlctl license install --file <path.lic>`: strips a leading UTF-8 BOM, base64-encodes the file and POSTs `{"license": "<base64>"}` to `license/install`. `--dry-run` validates the file and prints size, BOM found and base64 length without calling VBR or printing licence content. The body matches VBR's `LicenseInstallationSpec` (required `license`, base64 string) (#210).
 
 ### Changed
 
@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Payload files passed with `-f` to `post`/`put` that start with a UTF-8 BOM are no longer rejected by the JSON/YAML parser (#210).
+- `owlctl post` and `owlctl put` now print the response body on success instead of discarding it. JSON is pretty-printed, other bodies are printed raw, and an empty body (e.g. 204) prints nothing. The `Status Code:` / `Status:` lines moved to stderr so stdout is pipe-friendly (`owlctl post ... | jq .id`). Non-2xx behaviour is unchanged (#208).
 - `job apply` no longer prints `Applied: isDisabled: …` (or counts it in `N field(s) applied`) before the enable/disable call, and no longer records `isDisabled` in `state.json` when VBR refuses it. The line is now printed after a successful call as `Applied: isDisabled: false -> true (via POST jobs/<id>/disable)`. On a refusal or failed read-back, state keeps VBR's actual `isDisabled` (or omits it if unknown) and the event's changed fields exclude it; the `Warning:` line and non-zero exit are unchanged (#203).
 - `docs/gitops-workflows.md` Pattern 1 now names `owlctl job apply --dry-run` instead of the non-existent top-level `owlctl apply`, and the "Cleaning State" section of `docs/state-management.md` edits `"$(owlctl state path)"` instead of `./state.json` and no longer advertises an unimplemented `state clean` command (#205).
 

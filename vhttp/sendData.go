@@ -104,7 +104,29 @@ func SendData(api_url string, filename string, endPoint string, method string, p
 			log.Fatalf("HTTP %d: %s %s\nResponse: %s", res.StatusCode, method, connstring, string(body))
 		}
 
-		fmt.Println("Status Code:", res.StatusCode)
-		fmt.Println("Status:", res.Status)
+		utils.IsErr(writeSuccessResponse(res, os.Stdout, os.Stderr))
+}
 
+// writeSuccessResponse writes the body of a 2xx response to stdout (indented
+// when it is JSON, raw otherwise, nothing when empty) and the status lines to
+// stderr, so that stdout can be piped into tools such as jq.
+func writeSuccessResponse(res *http.Response, stdout, stderr io.Writer) error {
+	fmt.Fprintln(stderr, "Status Code:", res.StatusCode)
+	fmt.Fprintln(stderr, "Status:", res.Status)
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("reading response body: %w", err)
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil
+	}
+
+	var pretty bytes.Buffer
+	if json.Indent(&pretty, body, "", "  ") == nil {
+		body = pretty.Bytes()
+	}
+	_, err = stdout.Write(append(body, '\n'))
+	return err
 }

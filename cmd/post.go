@@ -18,6 +18,10 @@ Payload needs to be in the JSON format.
 
 Note that owlctl does not type check the payload.
 
+On success the response body is printed to stdout (pretty-printed when it is
+JSON, raw otherwise, nothing when empty) and the status lines go to stderr, so
+the output can be piped, e.g. owlctl post jobs/<id>/start | jq .id
+
 Commands:
 owlctl post jobs/c69eb538-5a07-4bd7-80cb-bdf5142eadd6/start
 owlctl post jobs -f job.json
