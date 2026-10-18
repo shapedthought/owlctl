@@ -38,7 +38,7 @@ func TestApplyJobState_CreateDisabledCallsDisable(t *testing.T) {
 	m := &mockJobStateClient{disabled: false}
 	withMockJobState(t, m)
 
-	err := applyJobState(map[string]interface{}{"isDisabled": true}, "job-1", models.Profile{})
+	_, err := applyJobState(map[string]interface{}{"isDisabled": true}, "job-1", models.Profile{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestApplyJobState_UpdateEnableCallsEnable(t *testing.T) {
 	m := &mockJobStateClient{disabled: true}
 	withMockJobState(t, m)
 
-	if err := applyJobState(map[string]interface{}{"isDisabled": false}, "job-1", models.Profile{}); err != nil {
+	if _, err := applyJobState(map[string]interface{}{"isDisabled": false}, "job-1", models.Profile{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(m.setCalls) != 1 || m.setCalls[0] {
@@ -65,12 +65,15 @@ Response: {"errorCode":"UnknownError","message":"Could not disable job [x]. JobT
 	m := &mockJobStateClient{disabled: false, setErr: errors.New(vbrMsg)}
 	withMockJobState(t, m)
 
-	err := applyJobState(map[string]interface{}{"isDisabled": true}, "job-1", models.Profile{})
+	out, err := applyJobState(map[string]interface{}{"isDisabled": true}, "job-1", models.Profile{})
 	if err == nil {
 		t.Fatal("expected an error when VBR refuses to disable the job")
 	}
 	if !strings.Contains(err.Error(), "Could not disable job") || !strings.Contains(err.Error(), "was not applied") {
 		t.Fatalf("error should carry VBR's message and say isDisabled was not applied, got: %v", err)
+	}
+	if _, ok := out.Applied["isDisabled"]; ok || out.Actual["isDisabled"] != false {
+		t.Fatalf("refusal should report the actual value and no applied field, got %+v", out)
 	}
 }
 
@@ -79,7 +82,7 @@ func TestApplyJobState_NoCallWhenStateMatches(t *testing.T) {
 		m := &mockJobStateClient{disabled: tc}
 		withMockJobState(t, m)
 
-		if err := applyJobState(map[string]interface{}{"isDisabled": tc}, "job-1", models.Profile{}); err != nil {
+		if _, err := applyJobState(map[string]interface{}{"isDisabled": tc}, "job-1", models.Profile{}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(m.setCalls) != 0 {
@@ -92,7 +95,7 @@ func TestApplyJobState_NoCallWhenSpecOmitsIsDisabled(t *testing.T) {
 	m := &mockJobStateClient{}
 	withMockJobState(t, m)
 
-	if err := applyJobState(map[string]interface{}{"name": "x"}, "job-1", models.Profile{}); err != nil {
+	if _, err := applyJobState(map[string]interface{}{"name": "x"}, "job-1", models.Profile{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if m.readCalled != 0 || len(m.setCalls) != 0 {
@@ -104,7 +107,7 @@ func TestApplyJobState_ReadFailureIsError(t *testing.T) {
 	m := &mockJobStateClient{readErr: errors.New("boom")}
 	withMockJobState(t, m)
 
-	if err := applyJobState(map[string]interface{}{"isDisabled": true}, "job-1", models.Profile{}); err == nil {
+	if _, err := applyJobState(map[string]interface{}{"isDisabled": true}, "job-1", models.Profile{}); err == nil {
 		t.Fatal("expected an error when job state cannot be read")
 	}
 	if len(m.setCalls) != 0 {

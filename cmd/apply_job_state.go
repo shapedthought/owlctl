@@ -64,24 +64,28 @@ func desiredJobDisabled(spec map[string]interface{}) (bool, bool) {
 // VBR and only calls enable/disable when it differs. A refusal from VBR (for
 // example HTTP 400 for jobs that are not scheduled) is returned as an error that
 // includes VBR's message.
-func applyJobState(spec map[string]interface{}, id string, profile models.Profile) error {
+//
+// The outcome says whether isDisabled now holds the desired value, or what VBR
+// reports when it was refused (nothing when the read-back itself failed).
+func applyJobState(spec map[string]interface{}, id string, profile models.Profile) (PostApplyOutcome, error) {
 	want, ok := desiredJobDisabled(spec)
 	if !ok {
-		return nil
+		return PostApplyOutcome{}, nil
 	}
 	client := newJobStateClient(profile)
 	actual, err := client.IsDisabled(id)
 	if err != nil {
-		return fmt.Errorf("isDisabled was not applied: could not read job state: %w", err)
+		return PostApplyOutcome{}, fmt.Errorf("isDisabled was not applied: could not read job state: %w", err)
 	}
 	if actual == want {
-		return nil
+		return PostApplyOutcome{Applied: map[string]string{"isDisabled": ""}}, nil
 	}
 	fmt.Printf("Setting job state: %s (isDisabled: %t)\n", jobStateVerb(want), want)
 	if err := client.SetDisabled(id, want); err != nil {
-		return fmt.Errorf("isDisabled: %t was not applied, VBR refused to %s the job: %w", want, jobStateVerb(want), err)
+		return PostApplyOutcome{Actual: map[string]interface{}{"isDisabled": actual}},
+			fmt.Errorf("isDisabled: %t was not applied, VBR refused to %s the job: %w", want, jobStateVerb(want), err)
 	}
-	return nil
+	return PostApplyOutcome{Applied: map[string]string{"isDisabled": fmt.Sprintf("POST jobs/%s/%s", id, jobStateVerb(want))}}, nil
 }
 
 // plannedJobState describes the enable/disable call apply would make, for
