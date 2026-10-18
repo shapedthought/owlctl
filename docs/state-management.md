@@ -478,14 +478,9 @@ Remove resources that no longer exist in VBR:
 
 **Manual cleanup:**
 ```bash
-# Edit state.json and remove entries for deleted resources
-vim state.json
-```
-
-**Automated cleanup (future feature):**
-```bash
-# Not yet implemented
-# owlctl state clean --remove-missing
+# Back up state.json, then remove entries for deleted resources
+cp "$(owlctl state path)" "$(owlctl state path).bak"
+"${EDITOR:-vi}" "$(owlctl state path)"
 ```
 
 ### Migrating State

@@ -905,7 +905,7 @@ git log -S "retentionPolicy" -- specs/jobs/*.yaml
 **VBR audit logs:**
 - Enable VBR audit logging
 - Configure log forwarding to central logging system
-- Correlate owlctl apply operations with VBR audit events
+- Correlate owlctl `apply` operations with VBR audit events
 - Monitor for configuration changes not from owlctl
 
 ### 5. Access Control
@@ -984,7 +984,7 @@ spec:
 **Goal:** Validate all configuration changes before merging to main.
 
 **Implementation:**
-1. Run `owlctl apply --dry-run` on changed files
+1. Run `owlctl job apply --dry-run` on changed job files (use `repo apply`, `repo sobr-apply`, `encryption kms-apply` or `config-backup apply` with `--dry-run` for the other kinds)
 2. Test against dev VBR environment
 3. Comment results on PR
 4. Block merge if validation fails
