@@ -59,7 +59,13 @@ type ResourceApplyConfig struct {
 	// PostApply is called after a successful create or update with the desired
 	// spec and the resource ID. A returned error fails the apply (state is still
 	// recorded, since the resource itself was written).
-	PostApply func(spec map[string]interface{}, id string, profile models.Profile) error
+	PostApply func(spec map[string]interface{}, id string, profile models.Profile) (PostApplyOutcome, error)
+
+	// PostApplyFields names the top-level spec fields PostApply reconciles
+	// itself because the PUT ignores them (job isDisabled). They are not reported
+	// as applied until PostApply confirms them, and a refused one is not recorded
+	// in state as if it had been applied.
+	PostApplyFields []string
 
 	// PlanPostApply optionally describes the PostApply action for --dry-run.
 	// existing is nil when the resource would be created, and id is then empty
@@ -69,6 +75,21 @@ type ResourceApplyConfig struct {
 	// SeverityMap assigns a severity to each change shown by --dry-run. Fields it
 	// does not list, or a nil map, report INFO.
 	SeverityMap SeverityMap
+}
+
+// putResource sends the PUT for an update. Replaced in tests.
+var putResource = vhttp.PutDataWithError
+
+// PostApplyOutcome reports what PostApply actually did for the fields listed in
+// ResourceApplyConfig.PostApplyFields.
+type PostApplyOutcome struct {
+	// Applied maps each field that now holds the desired value to a short note
+	// describing how it got there (e.g. "POST jobs/<id>/disable"). The note may
+	// be empty when no call was needed.
+	Applied map[string]string
+	// Actual maps fields that were not applied to the value read back from the
+	// resource. Fields missing from both maps have an unknown value.
+	Actual map[string]interface{}
 }
 
 // alreadyReportedError wraps an error that has already been printed to the user
@@ -121,6 +142,7 @@ func applyWithOptionalOverlay(specFile, overlayFile string, cfg ResourceApplyCon
 // If cachedRemCfg is non-nil, it is used instead of loading remediation config from disk.
 func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, profile models.Profile, dryRun bool, cachedRemCfg *remediation.Config) ApplyResult {
 	result := ApplyResult{DryRun: dryRun}
+	var deferred []FieldChange // changes on PostApplyFields, reported once PostApply succeeds
 
 	result.ResourceName = spec.Metadata.Name
 
@@ -252,12 +274,18 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 		}
 
 		// Print changes being applied and skipped
-		printApplyChanges(result.Changes, spec.Metadata.Name, true)
+		var immediate []FieldChange
+		immediate, deferred = splitPostApplyChanges(result.Changes, cfg.PostApplyFields)
+		if len(immediate) == 0 && len(deferred) > 0 {
+			fmt.Printf("\nApplying: %s\n\n", spec.Metadata.Name)
+		} else {
+			printApplyChanges(immediate, spec.Metadata.Name, true)
+		}
 		printSkippedFields(result.Skipped)
 
 		// PUT the updated resource
 		endpoint := fmt.Sprintf("%s/%s", cfg.Endpoint, existingID)
-		_, err = vhttp.PutDataWithError(endpoint, mergedSpec, profile)
+		_, err = putResource(endpoint, mergedSpec, profile)
 		if err != nil {
 			result.Error = fmt.Errorf("failed to update resource: %w", err)
 			return result
@@ -269,18 +297,23 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 	// Reconcile post-write state (e.g. job enabled/disabled). The resource was
 	// written, so state is still recorded below; the error fails the apply.
 	var postApplyErr error
+	var outcome PostApplyOutcome
 	if cfg.PostApply != nil && !dryRun {
-		postApplyErr = cfg.PostApply(postApplySpec(spec.Spec, remediationCfg, cfg.Kind, result.Skipped), result.ResourceID, profile)
+		outcome, postApplyErr = cfg.PostApply(postApplySpec(spec.Spec, remediationCfg, cfg.Kind, result.Skipped), result.ResourceID, profile)
 		if postApplyErr != nil {
 			fmt.Printf("Warning: %v\n", postApplyErr)
 			postApplyErr = alreadyReportedError{postApplyErr}
 		}
+		printDeferredApplied(deferred, outcome)
 	}
 
 	// Update state with origin: "applied" (skip in dry-run mode)
 	if !dryRun {
 		// Extract field names from changes for audit trail
 		changedFields := extractFieldNames(result.Changes)
+		if postApplyErr != nil {
+			spec, changedFields = withoutUnappliedFields(spec, changedFields, cfg.PostApplyFields, outcome)
+		}
 		// Use "created" action for new resources, "applied" for updates
 		action := "applied"
 		if result.Action == "created" {
@@ -294,6 +327,75 @@ func applyResourceSpec(spec resources.ResourceSpec, cfg ResourceApplyConfig, pro
 
 	result.Error = postApplyErr
 	return result
+}
+
+// splitPostApplyChanges separates the changes to report right after the PUT from
+// those on fields PostApply reconciles, which are reported once it succeeds.
+func splitPostApplyChanges(changes []FieldChange, postApplyFields []string) (immediate, deferred []FieldChange) {
+	for _, c := range changes {
+		if containsString(postApplyFields, c.Path) {
+			deferred = append(deferred, c)
+		} else {
+			immediate = append(immediate, c)
+		}
+	}
+	return immediate, deferred
+}
+
+// printDeferredApplied prints the Applied line for each deferred change that
+// PostApply confirmed. Refused or unconfirmed changes print nothing.
+func printDeferredApplied(deferred []FieldChange, outcome PostApplyOutcome) {
+	for _, c := range deferred {
+		note, ok := outcome.Applied[c.Path]
+		if !ok {
+			continue
+		}
+		line := fmt.Sprintf("  Applied: %s: %s -> %s", c.Path, applyFormatValue(c.OldValue), applyFormatValue(c.NewValue))
+		if note != "" {
+			line += fmt.Sprintf(" (via %s)", note)
+		}
+		fmt.Println(line)
+	}
+}
+
+// withoutUnappliedFields returns the spec and changed-field list to record in
+// state when PostApply failed. Each PostApply-managed field that was not
+// confirmed is set to its actual value, or dropped when that is unknown, and is
+// removed from the changed fields. The input spec is not mutated.
+func withoutUnappliedFields(spec resources.ResourceSpec, changedFields, postApplyFields []string, outcome PostApplyOutcome) (resources.ResourceSpec, []string) {
+	specCopy := make(map[string]interface{}, len(spec.Spec))
+	for k, v := range spec.Spec {
+		specCopy[k] = v
+	}
+	kept := make([]string, 0, len(changedFields))
+	for _, f := range changedFields {
+		if _, ok := outcome.Applied[f]; ok || !containsString(postApplyFields, f) {
+			kept = append(kept, f)
+		}
+	}
+	for _, f := range postApplyFields {
+		if _, ok := outcome.Applied[f]; ok {
+			continue
+		}
+		if actual, ok := outcome.Actual[f]; ok {
+			if _, inSpec := specCopy[f]; inSpec {
+				specCopy[f] = actual
+			}
+		} else {
+			delete(specCopy, f)
+		}
+	}
+	spec.Spec = specCopy
+	return spec, kept
+}
+
+func containsString(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // postApplySpec returns the spec handed to PostApply/PlanPostApply: a copy with

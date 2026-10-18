@@ -163,7 +163,7 @@ func TestPlannedJobState_RealID(t *testing.T) {
 	}
 }
 
-func jobDryRunTestConfig(existing string, id string, post func(spec map[string]interface{}, id string, _ models.Profile) error) ResourceApplyConfig {
+func jobDryRunTestConfig(existing string, id string, post func(spec map[string]interface{}, id string, _ models.Profile) (PostApplyOutcome, error)) ResourceApplyConfig {
 	cfg := jobSkipTestConfig(&[]bool{})
 	cfg.FetchCurrent = func(string, models.Profile) (json.RawMessage, string, error) {
 		if existing == "" {
@@ -202,7 +202,9 @@ func TestApplyResourceSpec_DryRunCreateWouldCall(t *testing.T) {
 
 func TestApplyResourceSpec_RefusalPrintedOnce(t *testing.T) {
 	refusal := errors.New("isDisabled: true was not applied, VBR refused to disable the job: Could not disable job")
-	cfg := jobDryRunTestConfig("", "", func(map[string]interface{}, string, models.Profile) error { return refusal })
+	cfg := jobDryRunTestConfig("", "", func(map[string]interface{}, string, models.Profile) (PostApplyOutcome, error) {
+		return PostApplyOutcome{}, refusal
+	})
 	t.Setenv("OWLCTL_SETTINGS_PATH", t.TempDir())
 
 	var result ApplyResult

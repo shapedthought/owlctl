@@ -30,11 +30,11 @@ func jobSkipTestConfig(called *[]bool) ResourceApplyConfig {
 		PostCreate: func(map[string]interface{}, models.Profile, string) (string, error) {
 			return "job-1", nil
 		},
-		PostApply: func(spec map[string]interface{}, id string, _ models.Profile) error {
+		PostApply: func(spec map[string]interface{}, id string, _ models.Profile) (PostApplyOutcome, error) {
 			if want, ok := desiredJobDisabled(spec); ok {
 				*called = append(*called, want)
 			}
-			return nil
+			return PostApplyOutcome{}, nil
 		},
 		PlanPostApply: plannedJobState,
 	}

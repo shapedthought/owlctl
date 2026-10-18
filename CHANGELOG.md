@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bumped the default owlctl install pin to `v1.4.0` in `examples/pipelines/templates/install-owlctl.yml` and `examples/pipelines/lab-verification/lab-verification.yml` (and its README parameter table), following the v1.4.0 release (#200).
 
+### Fixed
+
+- `job apply` no longer prints `Applied: isDisabled: …` (or counts it in `N field(s) applied`) before the enable/disable call, and no longer records `isDisabled` in `state.json` when VBR refuses it. The line is now printed after a successful call as `Applied: isDisabled: false -> true (via POST jobs/<id>/disable)`. On a refusal or failed read-back, state keeps VBR's actual `isDisabled` (or omits it if unknown) and the event's changed fields exclude it; the `Warning:` line and non-zero exit are unchanged (#203).
+
 ## [1.4.0] - 2026-10-17
 
 > **Heads-up for script authors:** the `--dry-run` output format changed (#187). `job apply` and the generic apply commands now share one format: "No changes detected. Resource is already in desired state.", change lines `  <SEVERITY> ~ path: old -> new` (no "(current)/(new)"), "N field(s) would be changed.", and no truncation. Use `--output json` for machine parsing.

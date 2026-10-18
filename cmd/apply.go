@@ -377,15 +377,16 @@ func getConfiguredOverlay() (string, error) {
 
 // jobApplyConfig defines how to apply job configurations via the generic infrastructure
 var jobApplyConfig = ResourceApplyConfig{
-	Kind:           "VBRJob",
-	Endpoint:       "jobs",
-	IgnoreFields:   jobIgnoreFields,
-	Mode:           ApplyCreateOrUpdate,
-	FetchCurrent:   fetchCurrentJob,
-	PreparePayload: prepareJobPayload,
-	PostApply:      applyJobState,
-	PlanPostApply:  plannedJobState,
-	SeverityMap:    jobSeverityMap,
+	Kind:            "VBRJob",
+	Endpoint:        "jobs",
+	IgnoreFields:    jobIgnoreFields,
+	Mode:            ApplyCreateOrUpdate,
+	FetchCurrent:    fetchCurrentJob,
+	PreparePayload:  prepareJobPayload,
+	PostApply:       applyJobState,
+	PostApplyFields: []string{"isDisabled"},
+	PlanPostApply:   plannedJobState,
+	SeverityMap:     jobSeverityMap,
 }
 
 // jobDryRunReport builds the --dry-run report for a job. existing is the live
