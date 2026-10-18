@@ -47,6 +47,7 @@ func SendData(api_url string, filename string, endPoint string, method string, p
 		if strings.Contains(filename, ".") {
 			j, err = os.ReadFile(filename)
 			utils.IsErr(err)
+			j = utils.StripUTF8BOM(j)
 			if strings.Contains(filename, "yaml") || strings.Contains(filename, "yml") {
 				err = yaml.Unmarshal(j, &data)
 				utils.IsErr(err)

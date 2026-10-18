@@ -81,6 +81,20 @@ owlctl put jobs/<job-id> -f updated-job.json
 owlctl put repositories/<repo-id> -f updated-repo.json
 ```
 
+Payload files may start with a UTF-8 BOM; it is stripped before parsing.
+
+### License Install (VBR)
+
+```bash
+# Validate the file locally (no request to VBR, licence content is never printed)
+owlctl license install --file nfr.lic --dry-run
+
+# Install: strips a UTF-8 BOM, base64-encodes, POSTs {"license": "<base64>"} to license/install
+owlctl license install --file nfr.lic
+```
+
+Veeam NFR `.lic` files can begin with a UTF-8 BOM, which VBR rejects (`Data at the root level is invalid`); `license install` removes it for you.
+
 ### Common Endpoints (VBR)
 
 ```bash
