@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `owlctl post` and `owlctl put` now print the response body on success instead of discarding it. JSON is pretty-printed, other bodies are printed raw, and an empty body (e.g. 204) prints nothing. The `Status Code:` / `Status:` lines moved to stderr so stdout is pipe-friendly (`owlctl post ... | jq .id`). Non-2xx behaviour is unchanged (#208).
 - `job apply` no longer prints `Applied: isDisabled: …` (or counts it in `N field(s) applied`) before the enable/disable call, and no longer records `isDisabled` in `state.json` when VBR refuses it. The line is now printed after a successful call as `Applied: isDisabled: false -> true (via POST jobs/<id>/disable)`. On a refusal or failed read-back, state keeps VBR's actual `isDisabled` (or omits it if unknown) and the event's changed fields exclude it; the `Warning:` line and non-zero exit are unchanged (#203).
 - `docs/gitops-workflows.md` Pattern 1 now names `owlctl job apply --dry-run` instead of the non-existent top-level `owlctl apply`, and the "Cleaning State" section of `docs/state-management.md` edits `"$(owlctl state path)"` instead of `./state.json` and no longer advertises an unimplemented `state clean` command (#205).
 

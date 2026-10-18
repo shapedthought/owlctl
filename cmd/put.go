@@ -25,6 +25,10 @@ Payload needs to be in the JSON format. PUTs always require a payload.
 
 Note that owlctl does not type check the payload.
 
+On success the response body is printed to stdout (pretty-printed when it is
+JSON, raw otherwise, nothing when empty) and the status lines go to stderr, so
+the output can be piped, e.g. owlctl put jobs -f job.json | jq .id
+
 Commands:
 owlctl put jobs -f job.json
 
