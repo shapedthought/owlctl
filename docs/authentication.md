@@ -286,7 +286,7 @@ Keychain unlock dialogs and file-keyring passphrase prompts cannot be answered f
 
 On macOS, tokens go in your **login** keychain (not a separate `owlctl.keychain`), and owlctl is marked as a trusted application on the item, so reads should not raise a confirmation dialog each time.
 
-The Keychain backend needs a cgo build. Binaries built from source on a Mac (`go build`) include it. The cross-compiled release binaries for macOS do not, so they fall back to the file keyring. With the file keyring, either set `OWLCTL_FILE_KEY` or expect a passphrase prompt in each new interactive process; or use `OWLCTL_KEYRING=none` and supply credentials from the environment. Check which you have with `go version -m $(which owlctl)` (`CGO_ENABLED=1` means Keychain is available).
+The Keychain backend needs a cgo build. Binaries built from source on a Mac (`go build`) include it. The cross-compiled release binaries for macOS do not, so with `OWLCTL_KEYRING=auto` they use the file keyring instead (an explicit `OWLCTL_KEYRING=keychain` fails with a "not available in this build" error). With the file keyring, either set `OWLCTL_FILE_KEY` or expect a passphrase prompt in each new interactive process; or use `OWLCTL_KEYRING=none` and supply credentials from the environment. Check which you have with `go version -m $(which owlctl)` (`CGO_ENABLED=1` means Keychain is available).
 
 #### File-Based Keyring
 

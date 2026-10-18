@@ -40,6 +40,9 @@ type keyringChoice struct {
 	backend keyring.BackendType
 	// name is the OWLCTL_KEYRING-style name of the backend ("none" when disabled).
 	name string
+	// auto is true when the backend was picked by "auto" rather than named
+	// explicitly; a failure to open it degrades to "none" instead of erroring.
+	auto bool
 }
 
 // keyringEnv carries the inputs to backend selection so it can be tested.
@@ -50,7 +53,25 @@ type keyringEnv struct {
 	stdinTTY    bool
 	hasFileKey  bool
 	hasDBus     bool
+	// available lists the backends compiled into this build
+	// (keyring.AvailableBackends()). nil means "all of them" (used by tests).
+	available []keyring.BackendType
 }
+
+func (e keyringEnv) has(b keyring.BackendType) bool {
+	if e.available == nil {
+		return true
+	}
+	for _, a := range e.available {
+		if a == b {
+			return true
+		}
+	}
+	return false
+}
+
+// keyringEnvFunc is swapped in tests.
+var keyringEnvFunc = currentKeyringEnv
 
 func currentKeyringEnv() keyringEnv {
 	return keyringEnv{
@@ -60,6 +81,7 @@ func currentKeyringEnv() keyringEnv {
 		stdinTTY:    term.IsTerminal(int(os.Stdin.Fd())),
 		hasFileKey:  os.Getenv(FileKeyEnvVar) != "",
 		hasDBus:     os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "",
+		available:   keyring.AvailableBackends(),
 	}
 }
 
@@ -76,33 +98,48 @@ func chooseKeyring(e keyringEnv) (keyringChoice, error) {
 			// stdin not a TTY or CI: every backend might prompt, so act as "none".
 			return none, nil
 		}
+		// Only pick a backend compiled into this build (the cgo-free darwin
+		// release binaries have no Keychain); otherwise use the file keyring.
+		preferred := keyringChoice{keyring.FileBackend, keyringFile, true}
 		switch e.goos {
 		case "darwin":
-			return keyringChoice{keyring.KeychainBackend, keyringKeychain}, nil
+			preferred = keyringChoice{keyring.KeychainBackend, keyringKeychain, true}
 		case "windows":
-			return keyringChoice{keyring.WinCredBackend, keyringWinCred}, nil
+			preferred = keyringChoice{keyring.WinCredBackend, keyringWinCred, true}
 		case "linux":
 			if e.hasDBus {
-				return keyringChoice{keyring.SecretServiceBackend, keyringSecretService}, nil
+				preferred = keyringChoice{keyring.SecretServiceBackend, keyringSecretService, true}
 			}
 		}
-		return keyringChoice{keyring.FileBackend, keyringFile}, nil
+		if !e.has(preferred.backend) {
+			preferred = keyringChoice{keyring.FileBackend, keyringFile, true}
+		}
+		return preferred, nil
 	case keyringKeychain:
-		return keyringChoice{keyring.KeychainBackend, keyringKeychain}, nil
+		return explicitChoice(e, keyring.KeychainBackend, keyringKeychain)
 	case keyringSecretService:
-		return keyringChoice{keyring.SecretServiceBackend, keyringSecretService}, nil
+		return explicitChoice(e, keyring.SecretServiceBackend, keyringSecretService)
 	case keyringWinCred:
-		return keyringChoice{keyring.WinCredBackend, keyringWinCred}, nil
+		return explicitChoice(e, keyring.WinCredBackend, keyringWinCred)
 	case keyringFile:
 		if !e.hasFileKey && !e.stdinTTY {
 			return none, fmt.Errorf("%s=file needs %s when stdin is not a terminal (it cannot prompt for a passphrase); set %s or use %s=none",
 				KeyringEnvVar, FileKeyEnvVar, FileKeyEnvVar, KeyringEnvVar)
 		}
-		return keyringChoice{keyring.FileBackend, keyringFile}, nil
+		return keyringChoice{backend: keyring.FileBackend, name: keyringFile}, nil
 	default:
 		return none, fmt.Errorf("invalid %s value %q: must be one of auto, keychain, secret-service, wincred, file, none",
 			KeyringEnvVar, os.Getenv(KeyringEnvVar))
 	}
+}
+
+// explicitChoice validates a backend named by the user against this build.
+func explicitChoice(e keyringEnv, b keyring.BackendType, name string) (keyringChoice, error) {
+	if !e.has(b) {
+		return keyringChoice{name: keyringNone}, fmt.Errorf("%s=%s: the %s backend is not available in this build of owlctl (release macOS binaries, for example, are built without Keychain); use %s=file or %s=none",
+			KeyringEnvVar, name, name, KeyringEnvVar, KeyringEnvVar)
+	}
+	return keyringChoice{backend: b, name: name}, nil
 }
 
 // keyringTimeout returns the keyring operation timeout. The value is a Go

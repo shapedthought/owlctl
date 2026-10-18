@@ -74,6 +74,9 @@ func TestChooseKeyring(t *testing.T) {
 		{"file with TTY, no key", keyringEnv{setting: "file", stdinTTY: true}, "file", ""},
 		{"file with no TTY and no key errors", keyringEnv{setting: "file"}, "", "OWLCTL_FILE_KEY"},
 		{"unknown value errors", keyringEnv{setting: "bogus"}, "", "invalid OWLCTL_KEYRING"},
+		{"auto darwin without keychain falls back to file", keyringEnv{interactive: true, goos: "darwin", available: []keyring.BackendType{keyring.FileBackend}}, "file", ""},
+		{"auto linux dbus without secret-service falls back to file", keyringEnv{interactive: true, goos: "linux", hasDBus: true, available: []keyring.BackendType{keyring.FileBackend}}, "file", ""},
+		{"explicit keychain unavailable errors", keyringEnv{setting: "keychain", goos: "darwin", available: []keyring.BackendType{keyring.FileBackend}}, "", "keychain backend is not available in this build"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -290,5 +293,33 @@ func TestKeyringCall_FastBackendUnaffected(t *testing.T) {
 	}
 	if got, err := tm.getTokenFromKeychain("vbr"); err != nil || got != "value-abc" {
 		t.Errorf("got %q, %v", got, err)
+	}
+}
+
+func TestNewTokenManager_AutoOpenFailureDegradesToNone(t *testing.T) {
+	// Windows Credential Manager cannot open on Linux: an auto choice must degrade, not fail.
+	orig := keyringEnvFunc
+	defer func() { keyringEnvFunc = orig }()
+	keyringEnvFunc = func() keyringEnv {
+		return keyringEnv{interactive: true, goos: "windows", available: []keyring.BackendType{keyring.WinCredBackend}}
+	}
+	tm, err := NewTokenManager(false)
+	if err != nil {
+		t.Fatalf("auto open failure should degrade, got %v", err)
+	}
+	if tm.StorageEnabled() {
+		t.Error("storage should be disabled after degrade")
+	}
+}
+
+func TestNewTokenManager_ExplicitUnavailableErrors(t *testing.T) {
+	orig := keyringEnvFunc
+	defer func() { keyringEnvFunc = orig }()
+	keyringEnvFunc = func() keyringEnv {
+		return keyringEnv{setting: "keychain", goos: "darwin", available: []keyring.BackendType{keyring.FileBackend}}
+	}
+	_, err := NewTokenManager(false)
+	if err == nil || !strings.Contains(err.Error(), "keychain") || !strings.Contains(err.Error(), "not available in this build") {
+		t.Fatalf("err = %v, want not-available error naming keychain", err)
 	}
 }
