@@ -11,12 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `owlctl license install --file <path.lic>`: strips a leading UTF-8 BOM, base64-encodes the file and POSTs `{"license": "<base64>"}` to `license/install`. `--dry-run` validates the file and prints size, BOM found and base64 length without calling VBR or printing licence content. The body matches VBR's `LicenseInstallationSpec` (required `license`, base64 string) (#210).
 
+- `OWLCTL_KEYRING=auto|keychain|secret-service|wincred|file|none` selects the token storage backend. `none` never opens a keyring; `file` without a terminal and without `OWLCTL_FILE_KEY` fails immediately instead of prompting; unknown values are an error (#214).
+- `OWLCTL_KEYRING_TIMEOUT` (default 5s) bounds every keyring read, write and delete (#214, #209).
+
 ### Changed
 
+- On macOS, tokens are stored in the user's login keychain with owlctl as a trusted application, instead of a separate auto-locking `owlctl.keychain` (#214).
+- In non-interactive sessions (stdin not a terminal, or a CI variable set) the default `OWLCTL_KEYRING=auto` skips every backend that can prompt and authenticates from the environment; set `OWLCTL_KEYRING` explicitly to store tokens there (#214, #209).
+- `docs/authentication.md` documents `OWLCTL_KEYRING`, the timeout, non-interactive behaviour, the macOS login keychain and the real file-keyring paths (one file per key in `~/.owlctl/`) (#214).
 - Bumped the default owlctl install pin to `v1.4.0` in `examples/pipelines/templates/install-owlctl.yml` and `examples/pipelines/lab-verification/lab-verification.yml` (and its README parameter table), following the v1.4.0 release (#200).
 
 ### Fixed
 
+- owlctl no longer hangs when the keychain or file keyring wants to prompt in a script, CI job, ssh session or `< /dev/null`: a blocked keyring times out with a one-line stderr hint and owlctl falls back to the environment credentials (#209, #214).
 - Payload files passed with `-f` to `post`/`put` that start with a UTF-8 BOM are no longer rejected by the JSON/YAML parser (#210).
 - `owlctl post` and `owlctl put` now print the response body on success instead of discarding it. JSON is pretty-printed, other bodies are printed raw, and an empty body (e.g. 204) prints nothing. The `Status Code:` / `Status:` lines moved to stderr so stdout is pipe-friendly (`owlctl post ... | jq .id`). Non-2xx behaviour is unchanged (#208).
 - `job apply` no longer prints `Applied: isDisabled: …` (or counts it in `N field(s) applied`) before the enable/disable call, and no longer records `isDisabled` in `state.json` when VBR refuses it. The line is now printed after a successful call as `Applied: isDisabled: false -> true (via POST jobs/<id>/disable)`. On a refusal or failed read-back, state keeps VBR's actual `isDisabled` (or omits it if unknown) and the event's changed fields exclude it; the `Warning:` line and non-zero exit are unchanged (#203).

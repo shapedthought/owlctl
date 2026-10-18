@@ -218,6 +218,8 @@ $env:OWLCTL_SETTINGS_PATH = "$HOME\.owlctl\"  # Optional
 | `OWLCTL_TOKEN` | No | Explicit authentication token (bypasses auto-auth) |
 | `OWLCTL_SETTINGS_PATH` | No | Config file directory (default: current directory) |
 | `OWLCTL_FILE_KEY` | No | File keyring password (for non-interactive systems) |
+| `OWLCTL_KEYRING` | No | Token storage backend: `auto` (default), `keychain`, `secret-service`, `wincred`, `file`, `none` |
+| `OWLCTL_KEYRING_TIMEOUT` | No | Keyring operation timeout (default `5s`) |
 
 *Not required if `OWLCTL_TOKEN` is set
 
@@ -251,15 +253,44 @@ owlctl attempts authentication in this order:
 3. **Auto-authenticate** (CI/CD and non-TTY environments)
    - Detects non-interactive sessions automatically
    - Authenticates on-demand using `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL`
-   - No keychain interaction on headless systems
+   - No keychain interaction on headless systems (see `OWLCTL_KEYRING` below)
    ```bash
    # GitHub Actions, GitLab CI, Jenkins, etc.
    ./owlctl get jobs  # Auto-authenticates using env vars
    ```
 
-#### File-Based Keyring (Fallback)
+#### Choosing the Storage Backend (`OWLCTL_KEYRING`)
 
-If system keychain is unavailable, owlctl uses encrypted file storage (`~/.owlctl/owlctl-keyring`):
+`OWLCTL_KEYRING` selects where tokens are stored:
+
+| Value | Behaviour |
+|-------|-----------|
+| `auto` (default) | Interactive terminal: macOS login keychain, Windows Credential Manager, Linux Secret Service (when `DBUS_SESSION_BUS_ADDRESS` is set) or the file keyring otherwise. **Non-interactive** (stdin is not a terminal, or a CI variable such as `CI` is set): behaves as `none`. |
+| `keychain` | macOS Keychain. Only available in builds with cgo (see below). |
+| `secret-service` | Linux Secret Service (GNOME Keyring, KWallet). |
+| `wincred` | Windows Credential Manager. |
+| `file` | Encrypted file keyring in `~/.owlctl`. Needs `OWLCTL_FILE_KEY` or a terminal; with neither, owlctl exits with an error instead of prompting. |
+| `none` | Never opens a keyring or stores a token. Every process authenticates from `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL` (or uses `OWLCTL_TOKEN`). |
+
+An unknown value is an error. Naming a backend explicitly overrides the non-interactive rule, so `OWLCTL_KEYRING=file` plus `OWLCTL_FILE_KEY` stores tokens in CI.
+
+#### Non-Interactive Sessions and Timeouts
+
+Keychain unlock dialogs and file-keyring passphrase prompts cannot be answered from scripts, CI, ssh sessions, IDE tasks or `< /dev/null`, and used to make owlctl hang. Now:
+
+- With the default `auto`, any non-interactive session skips every backend that could prompt and authenticates from the environment.
+- Every keyring read, write and delete has a timeout (default 5 seconds; set `OWLCTL_KEYRING_TIMEOUT` to a Go duration such as `15s` or a number of seconds). On timeout owlctl prints one line to stderr naming `OWLCTL_TOKEN` and `OWLCTL_KEYRING=none`, stops using the keyring for the rest of the process, and falls back to the environment credentials.
+- If you need longer than 5 seconds to answer an interactive unlock dialog, raise `OWLCTL_KEYRING_TIMEOUT`. The file keyring is exempt, since it waits for your passphrase.
+
+#### macOS Keychain
+
+On macOS, tokens go in your **login** keychain (not a separate `owlctl.keychain`), and owlctl is marked as a trusted application on the item, so reads should not raise a confirmation dialog each time.
+
+The Keychain backend needs a cgo build. Binaries built from source on a Mac (`go build`) include it. The cross-compiled release binaries for macOS do not, so they fall back to the file keyring. With the file keyring, either set `OWLCTL_FILE_KEY` or expect a passphrase prompt in each new interactive process; or use `OWLCTL_KEYRING=none` and supply credentials from the environment. Check which you have with `go version -m $(which owlctl)` (`CGO_ENABLED=1` means Keychain is available).
+
+#### File-Based Keyring
+
+The file keyring stores one encrypted file per token key in `~/.owlctl/`, named after the key (for example `~/.owlctl/vbr`, or `~/.owlctl/instance%3Avbr-prod` for the instance `vbr-prod`). It is used on Linux without a Secret Service/D-Bus session, on release macOS binaries, and when `OWLCTL_KEYRING=file`.
 
 **Interactive systems:**
 ```bash
@@ -267,8 +298,9 @@ If system keychain is unavailable, owlctl uses encrypted file storage (`~/.owlct
 # Prompts: Enter password for owlctl file keyring: _
 ```
 
-**CI/CD systems:**
+**Scripts and CI:**
 ```bash
+export OWLCTL_KEYRING=file
 export OWLCTL_FILE_KEY="your-secure-password"
 ./owlctl login  # Uses OWLCTL_FILE_KEY for encryption
 ```

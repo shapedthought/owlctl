@@ -106,7 +106,7 @@ func loginWithTokenManager() {
 	}
 
 	// Store token in keychain if interactive (not CI/CD)
-	if auth.IsCI() {
+	if auth.IsCI() && !tm.StorageEnabled() {
 		if debugAuth {
 			fmt.Fprintln(os.Stderr, "DEBUG: CI/CD environment detected, skipping keychain storage")
 		}
