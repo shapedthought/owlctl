@@ -8,17 +8,16 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/shapedthought/owlctl/auth"
 	"github.com/shapedthought/owlctl/models"
 	"github.com/shapedthought/owlctl/utils"
 )
 
 type ReadHeaders interface {
-	models.BasicAuthModel |  models.SendHeader
+	models.BasicAuthModel | models.SendHeader
 }
 
 func GetData[T any](url string, profile models.Profile) T {
-	
+
 	settings := utils.ReadSettings()
 
 	// With v1.0 profiles, credentials are always from environment variables
@@ -33,25 +32,15 @@ func GetData[T any](url string, profile models.Profile) T {
 	// Use APIPrefix from endpoints structure
 	connstring := fmt.Sprintf("https://%v:%v%v/%v", api_url, profile.Port, profile.Endpoints.APIPrefix, url)
 
-	r, err := http.NewRequest("GET", connstring, nil)
-	utils.IsErr(err)
-	r.Header.Add("accept", profile.Headers.Accept)
-
-	// Get authentication token using TokenManager
-	token, err := auth.GetTokenForRequest(settings.SelectedProfile, profile, settings)
-	if err != nil {
-		log.Fatalf("Authentication failed: %v", err)
-	}
-
-	if profile.AuthType == "basic" {
-		r.Header.Add("x-RestSvcSessionId", token)
-	} else {
-		r.Header.Add("x-api-version", profile.Headers.XAPIVersion)
-		r.Header.Add("Authorization", "Bearer "+token)
-	}
-	
-
-	res, err := client.Do(r)
+	// The token is added (and renewed once on a 401) by doAuthed.
+	res, err := doAuthed(client, profile, settings, func() (*http.Request, error) {
+		r, err := http.NewRequest("GET", connstring, nil)
+		if err != nil {
+			return nil, err
+		}
+		r.Header.Add("accept", profile.Headers.Accept)
+		return r, nil
+	})
 	utils.IsErr(err)
 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
@@ -90,27 +79,16 @@ func GetDataWithError[T any](url string, profile models.Profile) (T, error) {
 
 	connstring := fmt.Sprintf("https://%v:%v%v/%v", api_url, profile.Port, profile.Endpoints.APIPrefix, url)
 
-	r, err := http.NewRequest("GET", connstring, nil)
+	res, err := doAuthed(client, profile, settings, func() (*http.Request, error) {
+		r, err := http.NewRequest("GET", connstring, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		r.Header.Add("accept", profile.Headers.Accept)
+		return r, nil
+	})
 	if err != nil {
-		return udata, fmt.Errorf("failed to create request: %w", err)
-	}
-	r.Header.Add("accept", profile.Headers.Accept)
-
-	token, err := auth.GetTokenForRequest(settings.SelectedProfile, profile, settings)
-	if err != nil {
-		return udata, fmt.Errorf("authentication failed: %w", err)
-	}
-
-	if profile.AuthType == "basic" {
-		r.Header.Add("x-RestSvcSessionId", token)
-	} else {
-		r.Header.Add("x-api-version", profile.Headers.XAPIVersion)
-		r.Header.Add("Authorization", "Bearer "+token)
-	}
-
-	res, err := client.Do(r)
-	if err != nil {
-		return udata, fmt.Errorf("request failed: %w", err)
+		return udata, requestError(err)
 	}
 	defer res.Body.Close()
 

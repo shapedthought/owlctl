@@ -186,7 +186,7 @@ Default API versions owlctl ships with (override per profile in `profiles.json`)
 
 ## Credentials and Token Storage
 
-Credentials always come from environment variables. Tokens are stored securely in the system keychain.
+Credentials always come from environment variables. Tokens (never the password) are stored securely in the system keychain.
 
 ### Setting Credentials
 
@@ -213,7 +213,7 @@ $env:OWLCTL_SETTINGS_PATH = "$HOME\.owlctl\"  # Optional
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OWLCTL_USERNAME` | Yes* | API username (may need `DOMAIN\user` format) |
-| `OWLCTL_PASSWORD` | Yes* | API password |
+| `OWLCTL_PASSWORD` | Yes* | API password. Only used to log in; once `owlctl login` has stored a session it is not needed until the refresh token expires |
 | `OWLCTL_URL` | Yes* | Server hostname/IP (without `https://` or port) |
 | `OWLCTL_TOKEN` | No | Explicit authentication token (bypasses auto-auth) |
 | `OWLCTL_SETTINGS_PATH` | No | Config file directory (default: current directory) |
@@ -239,25 +239,56 @@ owlctl attempts authentication in this order:
    ./owlctl get jobs
    ```
 
-2. **System keychain** (interactive sessions only)
+2. **Stored access token** (when a keyring is active)
    - **macOS:** Keychain Access
    - **Windows:** Credential Manager
    - **Linux:** Secret Service (GNOME Keyring, KWallet)
-   - Token stored encrypted by OS
-   - Persists across owlctl sessions
+   - Token stored encrypted by OS; used only if it has more than 60 seconds left and was issued by the server you are talking to
    ```bash
-   ./owlctl login  # Token stored in keychain
+   ./owlctl login  # Session stored in keychain
    ./owlctl get jobs  # Uses token from keychain
    ```
 
-3. **Auto-authenticate** (CI/CD and non-TTY environments)
-   - Detects non-interactive sessions automatically
-   - Authenticates on-demand using `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL`
+3. **Stored refresh token** (VBR and other OAuth products)
+   - When the access token has expired, owlctl exchanges the stored refresh token for a new pair (`grant_type=refresh_token`) and stores it immediately
+   - `OWLCTL_PASSWORD` is **not** needed for this step
+
+4. **Auto-authenticate** with `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL`
+   - Used when nothing is stored (CI/CD and non-TTY environments, `OWLCTL_KEYRING=none`) or the refresh token has expired or been rejected
    - No keychain interaction on headless systems (see `OWLCTL_KEYRING` below)
    ```bash
    # GitHub Actions, GitLab CI, Jenkins, etc.
    ./owlctl get jobs  # Auto-authenticates using env vars
    ```
+
+5. **Error** telling you to run `owlctl login` (or set `OWLCTL_TOKEN`, or the credentials)
+
+#### Token Lifecycle
+
+For VBR, `owlctl login` stores a **session**: the 15-minute access token and the refresh token VBR returns with it. The password is never stored, in the keyring, a file or `state.json`.
+
+| Stage | What happens |
+|-------|--------------|
+| `owlctl login` | Password login; access token, refresh token, the refresh token's expiry (read from its JWT `exp` claim, for scheduling only) and the server it came from are stored. |
+| Any command, access token valid (more than 60s left) | The stored access token is used. No server call to the token endpoint. |
+| Access token expired | The refresh token is sent once. VBR refresh tokens are **single-use**, so the new access and refresh token replace the stored pair straight away; the next renewal uses the new refresh token. |
+| Request answered `401` | The token is renewed once (refresh token, then password) and the request is retried once. A second `401` is reported, never retried. |
+| Refresh token expired or rejected | The stored session is removed. If `OWLCTL_USERNAME`/`OWLCTL_PASSWORD` are set owlctl logs in with them; otherwise it fails with a message telling you to run `owlctl login`. |
+| `owlctl logout` | Calls `POST /api/oauth2/logout` (VBR; this also invalidates the refresh token), then deletes the stored item. The stored item is removed even if the server call fails. |
+
+So after one `owlctl login`, commands keep working past 15 minutes with `OWLCTL_PASSWORD` unset, until the refresh token expires (its lifetime is set by VBR). If two owlctl processes renew at the same moment, one of them may find the refresh token already used and fall back to the password (or ask you to log in again).
+
+Enterprise Manager sessions have no refresh token and behave as before: the session is stored and re-created with the password when it expires.
+
+With `OWLCTL_KEYRING=none` (and in non-interactive sessions by default) nothing is stored between processes, but within one process a `401` is still renewed through the refresh token.
+
+**Server binding.** Each stored item records the server hostname (`OWLCTL_URL`) and port it was issued by, and is never used for a different one. Items stored by older versions (which recorded no server) are ignored once, so run `owlctl login` again after upgrading. Named instances keep separate items (`instance:<name>`).
+
+**`OWLCTL_TOKEN` is never renewed.** If the server rejects it with `401`, owlctl reports the error; capture a new one with `owlctl login --output-token`.
+
+**What is never printed.** Access and refresh tokens do not appear in any output, including `--debug-auth`, which shows only the backend name and expiry times. `--output-token` prints only the access token.
+
+**`headers.json` is gone.** `owlctl login` no longer writes `headers.json`, and `job create` now uses the same token resolution as every other command. You can delete any old `headers.json`.
 
 #### Choosing the Storage Backend (`OWLCTL_KEYRING`)
 
@@ -338,6 +369,11 @@ export OWLCTL_URL="vbr.local"
     ./owlctl profile --set vbr
     ./owlctl job diff --all --security-only
     # Auto-authenticates, no keychain interaction
+```
+
+**Ending a session:**
+```bash
+./owlctl logout  # revokes the session on VBR and deletes the stored access and refresh token
 ```
 
 **Explicit Token Control:**
@@ -560,12 +596,12 @@ export OWLCTL_SETTINGS_PATH="$HOME/.owlctl/"
 
 **Problem:** API calls failing with authentication errors after working previously.
 
-**Solution:** Re-login to refresh the token in keychain:
+**Solution:** For VBR, owlctl renews the 15-minute access token itself from the stored refresh token (see [Token Lifecycle](#token-lifecycle)). If that fails, the refresh token has expired or was rejected; log in again:
 ```bash
 ./owlctl login
 ```
 
-The keychain token is automatically refreshed.
+Without a stored session (for example `OWLCTL_KEYRING=none`), set `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL` so owlctl can log in on each run.
 
 ### Token Storage Issues
 

@@ -14,12 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OWLCTL_KEYRING=auto|keychain|secret-service|wincred|file|none` selects the token storage backend. `none` never opens a keyring; `file` without a terminal and without `OWLCTL_FILE_KEY` fails immediately instead of prompting; unknown values are an error (#214).
 - `OWLCTL_KEYRING_TIMEOUT` bounds every keyring read, write and delete. The default is 60s on an interactive terminal (stdin is a TTY, `CI`/`TF_BUILD` unset), so there is time to approve a macOS Keychain dialog, and 5s otherwise (#214, #209).
 
+- VBR refresh tokens: `owlctl login` now stores the refresh token (and its expiry, read from the JWT `exp` claim) alongside the access token. When the 15-minute access token expires, owlctl exchanges the refresh token (`grant_type=refresh_token`) and stores the new pair immediately, since refresh tokens are single-use. `OWLCTL_PASSWORD` is only needed when no stored session can be renewed; otherwise the error tells you to run `owlctl login`. Enterprise Manager is unchanged (#214).
+- A `401` response now triggers one token renewal and one retry of the request, never a loop. `OWLCTL_TOKEN` is not renewed (#214).
+- Stored tokens are bound to the server (`OWLCTL_URL` hostname and port) that issued them and are never used for a different server. Tokens stored by earlier versions carry no binding and are ignored, so run `owlctl login` once after upgrading (#214).
+- `owlctl logout`: calls `POST /api/oauth2/logout` (VBR) and deletes the stored access and refresh token. The stored item is removed even if the server call fails (#214).
+
 ### Changed
 
+- `owlctl login` no longer writes `headers.json`, and `job create` authenticates through the same token resolution as every other command instead of reading `headers.json`. `--output-token` still prints only the access token and now opens no keyring (#214).
+- `docs/authentication.md` documents the token lifecycle (access, refresh, password fallback, logout) and server binding, and no longer claims the keychain token is "automatically refreshed" without saying how (#214).
 - On macOS, tokens are stored in the user's login keychain with owlctl as a trusted application, instead of a separate auto-locking `owlctl.keychain` (#214).
 - In non-interactive sessions (stdin not a terminal, or a CI variable set) the default `OWLCTL_KEYRING=auto` skips every backend that can prompt and authenticates from the environment; set `OWLCTL_KEYRING` explicitly to store tokens there (#214, #209).
 - `docs/authentication.md` documents `OWLCTL_KEYRING`, the timeout, non-interactive behaviour, the macOS login keychain and the real file-keyring paths (one file per key in `~/.owlctl/`) (#214).
 - Bumped the default owlctl install pin to `v1.4.0` in `examples/pipelines/templates/install-owlctl.yml` and `examples/pipelines/lab-verification/lab-verification.yml` (and its README parameter table), following the v1.4.0 release (#200).
+
+### Removed
+
+- The unused `vhttp.ApiLogin` (which would have written the full OAuth response, refresh token included, to `headers.json` with mode 0644) and `utils.ReadHeader` (#214).
 
 ### Fixed
 

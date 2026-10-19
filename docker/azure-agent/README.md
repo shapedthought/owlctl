@@ -240,7 +240,7 @@ The templates will run on your local Docker agent, allowing you to debug and ite
 
 ### owlctl Configuration Files
 
-owlctl creates configuration files (`settings.json`, `profiles.json`, `headers.json`) in the current directory by default. In pipelines:
+owlctl creates configuration files (`settings.json`, `profiles.json`) in the current directory by default. In pipelines:
 
 **✅ Correct - Combined steps:**
 ```yaml

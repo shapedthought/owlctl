@@ -3,12 +3,16 @@ package auth
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/shapedthought/owlctl/models"
 )
@@ -33,10 +37,47 @@ func NewAuthenticator(insecure bool, debug bool) *Authenticator {
 
 // AuthResult contains authentication response
 type AuthResult struct {
-	Token      string
-	ExpiresIn  int
-	TokenType  string
+	Token       string
+	ExpiresIn   int
+	TokenType   string
 	IsBasicAuth bool
+	// RefreshToken is the single-use OAuth refresh token (empty for Basic Auth).
+	RefreshToken string
+	// RefreshExpiresAt is the refresh token's expiry from its JWT exp claim;
+	// zero when the token is opaque or carries no exp.
+	RefreshExpiresAt time.Time
+}
+
+// ErrRefreshRejected is returned by Refresh when the server refuses the refresh
+// token (expired, already used or revoked). The caller should fall back to a
+// password login.
+var ErrRefreshRejected = errors.New("refresh token rejected")
+
+// logoutPath is VBR's session revocation endpoint.
+const logoutPath = "/api/oauth2/logout"
+
+// jwtExpiry reads the exp claim of a JWT without verifying the signature. It is
+// used only to schedule renewal, never to trust the token.
+func jwtExpiry(token string) (time.Time, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return time.Time{}, false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return time.Time{}, false
+	}
+	var claims struct {
+		Exp json.Number `json:"exp"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil || claims.Exp == "" {
+		return time.Time{}, false
+	}
+	f, err := claims.Exp.Float64()
+	if err != nil || f <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(int64(f), 0), true
 }
 
 // Authenticate performs OAuth or Basic Auth login
@@ -103,29 +144,100 @@ func (a *Authenticator) Authenticate(profile models.Profile, username, password,
 			TokenType:   "session",
 			IsBasicAuth: true,
 		}, nil
-	} else {
-		// Parse OAuth response
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		var oauthResp models.SendHeader
-		if err := json.Unmarshal(body, &oauthResp); err != nil {
-			return nil, fmt.Errorf("failed to parse OAuth response: %w", err)
-		}
-
-		if oauthResp.AccessToken == "" {
-			return nil, fmt.Errorf("no access token in response")
-		}
-
-		return &AuthResult{
-			Token:       oauthResp.AccessToken,
-			ExpiresIn:   oauthResp.ExpiresIn,
-			TokenType:   oauthResp.TokenType,
-			IsBasicAuth: false,
-		}, nil
 	}
+	return parseOAuthResponse(res)
+}
+
+// parseOAuthResponse converts a successful OAuth token response into an AuthResult.
+func parseOAuthResponse(res *http.Response) (*AuthResult, error) {
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var oauthResp models.SendHeader
+	if err := json.Unmarshal(body, &oauthResp); err != nil {
+		return nil, fmt.Errorf("failed to parse OAuth response: %w", err)
+	}
+
+	if oauthResp.AccessToken == "" {
+		return nil, fmt.Errorf("no access token in response")
+	}
+
+	result := &AuthResult{
+		Token:        oauthResp.AccessToken,
+		ExpiresIn:    oauthResp.ExpiresIn,
+		TokenType:    oauthResp.TokenType,
+		RefreshToken: oauthResp.RefreshToken,
+	}
+	if exp, ok := jwtExpiry(oauthResp.RefreshToken); ok {
+		result.RefreshExpiresAt = exp
+	}
+	return result, nil
+}
+
+// Refresh exchanges a refresh token for a new access/refresh token pair
+// (grant_type=refresh_token). VBR refresh tokens are single-use, so the caller
+// must persist the returned pair immediately. A 400/401 response yields
+// ErrRefreshRejected.
+func (a *Authenticator) Refresh(profile models.Profile, refreshToken, apiURL string) (*AuthResult, error) {
+	connstring := fmt.Sprintf("https://%s:%d%s", apiURL, profile.Port, profile.Endpoints.Auth)
+
+	if a.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG: Refreshing token at %s\n", connstring)
+	}
+
+	data := url.Values{}
+	data.Add("grant_type", "refresh_token")
+	data.Add("refresh_token", refreshToken)
+
+	r, err := http.NewRequest("POST", connstring, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	r.Header.Add("accept", profile.Headers.Accept)
+	r.Header.Add("x-api-version", profile.Headers.XAPIVersion)
+	r.Header.Add("Content-Type", profile.Headers.ContentType)
+
+	res, err := a.client.Do(r)
+	if err != nil {
+		return nil, fmt.Errorf("token refresh request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusBadRequest || res.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%w (%d)", ErrRefreshRejected, res.StatusCode)
+	}
+	if res.StatusCode != 200 && res.StatusCode != 201 {
+		return nil, fmt.Errorf("token refresh failed with status %d", res.StatusCode)
+	}
+	return parseOAuthResponse(res)
+}
+
+// Logout revokes the session on the server (POST /api/oauth2/logout with the
+// access token). VBR also invalidates the session's refresh token.
+func (a *Authenticator) Logout(profile models.Profile, token, apiURL string) error {
+	connstring := fmt.Sprintf("https://%s:%d%s", apiURL, profile.Port, logoutPath)
+
+	r, err := http.NewRequest("POST", connstring, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	r.Header.Add("accept", profile.Headers.Accept)
+	r.Header.Add("x-api-version", profile.Headers.XAPIVersion)
+	r.Header.Add("Authorization", "Bearer "+token)
+
+	res, err := a.client.Do(r)
+	if err != nil {
+		return fmt.Errorf("logout request failed: %w", err)
+	}
+	defer res.Body.Close()
+	_, _ = io.Copy(io.Discard, res.Body)
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return fmt.Errorf("logout failed with status %d", res.StatusCode)
+	}
+	return nil
 }
 
 // ExtractTokenInfo parses token from OAuth response body (for legacy compatibility)

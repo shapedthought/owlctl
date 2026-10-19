@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 const (
 	KeyringService = "owlctl"
 	TokenEnvVar    = "OWLCTL_TOKEN"
+
+	// accessTokenSkew is how much lifetime a stored access token must have left
+	// to be used as is; below it the token is renewed first.
+	accessTokenSkew = 60 * time.Second
 )
 
 // TokenManager handles token storage and retrieval
@@ -28,12 +33,37 @@ type TokenManager struct {
 	hintOnce sync.Once
 }
 
-// TokenInfo holds token metadata
+// TokenInfo holds the stored session: the access token, the single-use refresh
+// token and the server they were issued by. The password is never stored.
 type TokenInfo struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
 	IssuedAt  time.Time `json:"issued_at"`
 	Profile   string    `json:"profile"`
+
+	// RefreshToken is empty for Enterprise Manager sessions. RefreshExpiresAt is
+	// zero when the refresh token's expiry is unknown.
+	RefreshToken     string    `json:"refresh_token,omitempty"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at"`
+
+	// URL (hostname) and Port bind the item to the server that issued it; it is
+	// never used for a different server. Items without a URL predate binding.
+	URL  string `json:"url,omitempty"`
+	Port int    `json:"port,omitempty"`
+}
+
+// usableRefresh reports whether the stored refresh token may still be tried.
+func (i *TokenInfo) usableRefresh(now time.Time) bool {
+	return i.RefreshToken != "" && (i.RefreshExpiresAt.IsZero() || now.Before(i.RefreshExpiresAt))
+}
+
+// boundTo reports whether the item was issued by the given server. Items that
+// predate binding (no URL) only match a lookup with no URL.
+func (i *TokenInfo) boundTo(apiURL string, port int) bool {
+	if i.URL == "" {
+		return apiURL == ""
+	}
+	return strings.EqualFold(i.URL, apiURL) && i.Port == port
 }
 
 // StorageEnabled reports whether tokens can be persisted (a keyring is open).
@@ -51,82 +81,133 @@ func keychainKey(profileName string) string {
 	return profileName
 }
 
-// GetToken retrieves token using hybrid approach
-// Priority: 1) OWLCTL_TOKEN env var, 2) keychain, 3) auto-authenticate
-// profileName is used for keychain storage/retrieval
+// errNoSession is the final error when no step of the resolution order yields a token.
+var errNoSession = errors.New("not logged in: run 'owlctl login' (or set OWLCTL_TOKEN, or OWLCTL_USERNAME/OWLCTL_PASSWORD/OWLCTL_URL)")
+
+// GetToken retrieves a token. Order: 1) OWLCTL_TOKEN, 2) stored access token
+// with more than 60s left, 3) stored refresh token (grant_type=refresh_token),
+// 4) password login with the supplied credentials, 5) an error.
+// profileName is used for keychain storage/retrieval.
 func (tm *TokenManager) GetToken(profileName string, profile models.Profile, username, password, apiURL string, insecure bool) (string, error) {
+	token, _, err := tm.getToken(profileName, profile, username, password, apiURL, insecure, "")
+	return token, err
+}
+
+// getToken is GetToken plus the token's expiry (zero for OWLCTL_TOKEN). A
+// non-empty rejected is an access token the server answered 401 to: it is not
+// reused even if it looks valid.
+func (tm *TokenManager) getToken(profileName string, profile models.Profile, username, password, apiURL string, insecure bool, rejected string) (string, time.Time, error) {
 	if tm.debug {
 		fmt.Fprintln(os.Stderr, "DEBUG: Token resolution started")
 	}
 
-	kcKey := keychainKey(profileName)
-
-	// 1. Check explicit token env var (highest priority)
+	// 1. Explicit token env var (highest priority)
 	if token := os.Getenv(TokenEnvVar); token != "" {
-		if tm.debug {
-			fmt.Fprintln(os.Stderr, "DEBUG: Using token from OWLCTL_TOKEN env var")
-		}
-		// Validate token format and expiry if possible
 		if isValidTokenFormat(token) {
-			return token, nil
+			if token == rejected {
+				return "", time.Time{}, errors.New("OWLCTL_TOKEN was rejected by the server (401); it cannot be renewed")
+			}
+			if tm.debug {
+				fmt.Fprintln(os.Stderr, "DEBUG: Using token from OWLCTL_TOKEN env var")
+			}
+			return token, time.Time{}, nil
 		}
 		if tm.debug {
 			fmt.Fprintln(os.Stderr, "DEBUG: OWLCTL_TOKEN token invalid, trying next method")
 		}
 	}
 
-	// 2. Check system keychain
-	if token, err := tm.getTokenFromKeychain(kcKey); err == nil {
-		if tm.debug {
-			fmt.Fprintln(os.Stderr, "DEBUG: Using token from system keychain")
+	return tm.resolveSession(keychainKey(profileName), profile, username, password, apiURL, insecure, rejected)
+}
+
+// resolveSession runs steps 2-5 of the resolution order.
+func (tm *TokenManager) resolveSession(kcKey string, profile models.Profile, username, password, apiURL string, insecure bool, rejected string) (string, time.Time, error) {
+	var refreshErr error
+
+	info := tm.loadInfo(kcKey, apiURL, profile.Port)
+	if info != nil {
+		now := time.Now()
+
+		// 2. Stored access token
+		if info.Token != "" && info.Token != rejected && info.ExpiresAt.Sub(now) > accessTokenSkew {
+			if tm.debug {
+				fmt.Fprintf(os.Stderr, "DEBUG: Using stored access token (expires %s)\n", info.ExpiresAt.Format(time.RFC3339))
+			}
+			return info.Token, info.ExpiresAt, nil
 		}
-		return token, nil
-	} else if tm.debug {
-		fmt.Fprintf(os.Stderr, "DEBUG: Keychain lookup failed: %v\n", err)
+
+		// 3. Stored refresh token (not for Enterprise Manager sessions)
+		if profile.AuthType != "basic" && apiURL != "" && info.usableRefresh(now) {
+			if tm.debug {
+				fmt.Fprintln(os.Stderr, "DEBUG: Refreshing access token with stored refresh token")
+			}
+			res, err := NewAuthenticator(insecure, tm.debug).Refresh(profile, info.RefreshToken, apiURL)
+			if err == nil {
+				// Refresh tokens are single-use: persist the new pair straight away.
+				exp := tm.storeSession(kcKey, res, apiURL, profile.Port)
+				return res.Token, exp, nil
+			}
+			refreshErr = err
+			if errors.Is(err, ErrRefreshRejected) {
+				// The stored session is dead; stop retrying it.
+				tm.discard(kcKey)
+			}
+			if tm.debug {
+				fmt.Fprintf(os.Stderr, "DEBUG: Token refresh failed: %v\n", err)
+			}
+		} else if !info.usableRefresh(now) {
+			// Expired (or rejected) and nothing to renew it with.
+			tm.discard(kcKey)
+		}
 	}
 
-	// 3. Auto-authenticate if credentials available
+	// 4. Password login
 	if username != "" && password != "" && apiURL != "" {
 		if tm.debug {
 			fmt.Fprintln(os.Stderr, "DEBUG: Auto-authenticating with credentials")
 		}
-		token, expiresIn, err := tm.AuthenticateWithSettings(profile, username, password, apiURL, insecure)
+		res, err := tm.AuthenticateWithSettings(profile, username, password, apiURL, insecure)
 		if err != nil {
-			return "", fmt.Errorf("auto-authentication failed: %w", err)
+			return "", time.Time{}, fmt.Errorf("auto-authentication failed: %w", err)
 		}
-
-		// Store only when a keyring is active (never in non-interactive sessions
-		// unless the user chose a backend via OWLCTL_KEYRING)
-		if tm.StorageEnabled() {
-			if tm.debug {
-				fmt.Fprintln(os.Stderr, "DEBUG: Storing token in keychain (interactive session)")
-			}
-			if err := tm.StoreToken(kcKey, token, expiresIn); err != nil {
-				// Non-fatal: just warn
-				if tm.debug {
-					fmt.Fprintf(os.Stderr, "DEBUG: Failed to store token in keychain: %v\n", err)
-				}
-			}
-		} else if tm.debug {
-			fmt.Fprintln(os.Stderr, "DEBUG: Skipping keychain storage (CI/CD environment)")
-		}
-
-		return token, nil
+		// StoreSession is a no-op when no keyring is active (never in
+		// non-interactive sessions unless OWLCTL_KEYRING names a backend).
+		exp := tm.storeSession(kcKey, res, apiURL, profile.Port)
+		return res.Token, exp, nil
 	}
 
-	return "", errors.New("no authentication method available: set OWLCTL_TOKEN, store token in keychain, or provide OWLCTL_USERNAME/OWLCTL_PASSWORD/OWLCTL_URL")
+	// 5. Nothing left to try
+	if refreshErr != nil {
+		return "", time.Time{}, fmt.Errorf("stored session could not be renewed (%v): run 'owlctl login', or set OWLCTL_USERNAME/OWLCTL_PASSWORD", refreshErr)
+	}
+	return "", time.Time{}, errNoSession
 }
 
-// StoreToken stores a token in the system keychain
+// StoreToken stores an access token with no refresh token or server binding.
+// Prefer StoreSession; this form remains for callers that hold only a token.
 func (tm *TokenManager) StoreToken(profileName, token string, expiresIn int) error {
+	return tm.StoreSession(profileName, &AuthResult{Token: token, ExpiresIn: expiresIn}, "", 0)
+}
+
+// StoreSession persists a login result (access and refresh token) bound to the
+// server it came from. It also keeps the session in process memory so a renewal
+// later in the same process works even when no keyring is active.
+func (tm *TokenManager) StoreSession(profileName string, res *AuthResult, apiURL string, port int) error {
+	now := time.Now()
+	info := TokenInfo{
+		Token:            res.Token,
+		IssuedAt:         now,
+		ExpiresAt:        now.Add(time.Duration(res.ExpiresIn) * time.Second),
+		Profile:          profileName,
+		RefreshToken:     res.RefreshToken,
+		RefreshExpiresAt: res.RefreshExpiresAt,
+		URL:              apiURL,
+		Port:             port,
+	}
+	setProcessInfo(profileName, &info)
+
 	if tm.keyring == nil {
 		return nil // storage disabled: nothing to persist
-	}
-	info := TokenInfo{
-		Token:     token,
-		IssuedAt:  time.Now(),
-		ExpiresAt: time.Now().Add(time.Duration(expiresIn) * time.Second),
-		Profile:   profileName,
 	}
 
 	data, err := json.Marshal(info)
@@ -146,49 +227,104 @@ func (tm *TokenManager) StoreToken(profileName, token string, expiresIn int) err
 	return nil
 }
 
-// getTokenFromKeychain retrieves token from system keychain
-func (tm *TokenManager) getTokenFromKeychain(profileName string) (string, error) {
-	item, err := tm.keyringGet(profileName)
-	if err != nil {
-		return "", fmt.Errorf("token not found in keychain: %w", err)
+// storeSession is StoreSession for the resolution path: a failure to persist is
+// non-fatal (the caller still has a working token). It returns the access
+// token's expiry.
+func (tm *TokenManager) storeSession(key string, res *AuthResult, apiURL string, port int) time.Time {
+	if err := tm.StoreSession(key, res, apiURL, port); err != nil && tm.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG: Failed to store token in keychain: %v\n", err)
 	}
-
-	var info TokenInfo
-	if err := json.Unmarshal(item.Data, &info); err != nil {
-		return "", fmt.Errorf("failed to unmarshal token info: %w", err)
-	}
-
-	// Check if token is expired
-	if time.Now().After(info.ExpiresAt) {
-		if tm.debug {
-			fmt.Fprintln(os.Stderr, "DEBUG: Keychain token expired")
-		}
-		// Remove expired token
-		_ = tm.keyringCall(func(kr keyring.Keyring) error { return kr.Remove(profileName) })
-		return "", errors.New("token expired")
-	}
-
-	return info.Token, nil
+	return time.Now().Add(time.Duration(res.ExpiresIn) * time.Second)
 }
 
-// DeleteToken removes a token from keychain
+// readStored reads the stored item without any validity or server checks.
+func (tm *TokenManager) readStored(key string) (*TokenInfo, error) {
+	item, err := tm.keyringGet(key)
+	if err != nil {
+		return nil, fmt.Errorf("token not found in keychain: %w", err)
+	}
+	var info TokenInfo
+	if err := json.Unmarshal(item.Data, &info); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal token info: %w", err)
+	}
+	return &info, nil
+}
+
+// loadInfo returns the stored session for key if it was issued by the given
+// server, else nil. The keyring is authoritative (another process may have
+// rotated the refresh token); the in-process copy covers sessions that were
+// never persisted. An item for a different server is ignored and left alone.
+func (tm *TokenManager) loadInfo(key, apiURL string, port int) *TokenInfo {
+	info, err := tm.readStored(key)
+	if err != nil {
+		if tm.debug && tm.keyring != nil {
+			fmt.Fprintf(os.Stderr, "DEBUG: Keychain lookup failed: %v\n", err)
+		}
+		// With a working keyring a miss is a miss; memory only stands in when
+		// nothing could be persisted or read.
+		if tm.keyring == nil || tm.timedOut {
+			info = getProcessInfo(key)
+		}
+	}
+	if info == nil {
+		return nil
+	}
+	if !info.boundTo(apiURL, port) {
+		if tm.debug {
+			fmt.Fprintln(os.Stderr, "DEBUG: Ignoring stored token issued for a different server")
+		}
+		return nil
+	}
+	return info
+}
+
+// discard removes the stored session for key (best effort).
+func (tm *TokenManager) discard(key string) {
+	_ = tm.DeleteToken(key)
+}
+
+// DeleteToken removes the stored session (access and refresh token) for the key.
 func (tm *TokenManager) DeleteToken(profileName string) error {
+	clearProcessInfo(profileName)
 	if tm.keyring == nil {
 		return nil // nothing is stored when storage is disabled
 	}
 	return tm.keyringCall(func(kr keyring.Keyring) error { return kr.Remove(profileName) })
 }
 
-// AuthenticateWithSettings performs OAuth login with settings context
-func (tm *TokenManager) AuthenticateWithSettings(profile models.Profile, username, password, apiURL string, insecure bool) (string, int, error) {
-	auth := NewAuthenticator(insecure, tm.debug)
-
-	result, err := auth.Authenticate(profile, username, password, apiURL)
-	if err != nil {
-		return "", 0, err
+// Logout ends the session for profileName: it revokes it on the server (VBR
+// only; renewing the access token first if needed so the refresh token is
+// revoked too) and then deletes the stored item. The local item is removed
+// even when the server call fails, in which case the error is returned.
+// removed is false when nothing was stored for this server.
+func (tm *TokenManager) Logout(profileName string, profile models.Profile, apiURL string, insecure bool) (removed bool, err error) {
+	key := keychainKey(profileName)
+	info := tm.loadInfo(key, apiURL, profile.Port)
+	if info == nil {
+		return false, nil
 	}
 
-	return result.Token, result.ExpiresIn, nil
+	var remoteErr error
+	if profile.Product == "vbr" {
+		// No credentials are passed: a renewal here may only use the refresh token.
+		token, _, rerr := tm.resolveSession(key, profile, "", "", apiURL, insecure, "")
+		if rerr != nil {
+			// The session is already dead server-side (or unreachable).
+			remoteErr = fmt.Errorf("could not obtain an access token to revoke the session: %w", rerr)
+		} else if lerr := NewAuthenticator(insecure, tm.debug).Logout(profile, token, apiURL); lerr != nil {
+			remoteErr = lerr
+		}
+	}
+
+	if derr := tm.DeleteToken(key); derr != nil && remoteErr == nil {
+		remoteErr = fmt.Errorf("failed to remove stored token: %w", derr)
+	}
+	return true, remoteErr
+}
+
+// AuthenticateWithSettings performs OAuth login with settings context
+func (tm *TokenManager) AuthenticateWithSettings(profile models.Profile, username, password, apiURL string, insecure bool) (*AuthResult, error) {
+	return NewAuthenticator(insecure, tm.debug).Authenticate(profile, username, password, apiURL)
 }
 
 // isValidTokenFormat performs basic token format validation
@@ -242,72 +378,121 @@ func IsCI() bool {
 	return !isInteractiveSession()
 }
 
-// In-process token cache to avoid repeated authentication within a single command.
-// This is critical on Windows where the WinCred backend may reject large tokens
-// (>2560 bytes), causing every API call to re-authenticate.
+// In-process session state. It avoids repeated authentication within a single
+// command (critical on Windows where the WinCred backend may reject large
+// tokens, >2560 bytes, so every call would re-authenticate) and lets a 401
+// renewal use the refresh token even when no keyring is active. It lives only
+// in memory.
 var (
 	processTokenCache     string
 	processTokenCacheKey  string
 	processTokenExpiresAt time.Time
+
+	processInfoKey string
+	processInfoVal *TokenInfo
 )
 
-// ClearProcessTokenCache resets the in-process token cache.
+func setProcessInfo(key string, info *TokenInfo) {
+	processInfoKey = key
+	cp := *info
+	processInfoVal = &cp
+}
+
+func getProcessInfo(key string) *TokenInfo {
+	if processInfoVal == nil || processInfoKey != key {
+		return nil
+	}
+	cp := *processInfoVal
+	return &cp
+}
+
+func clearProcessInfo(key string) {
+	if processInfoKey == key {
+		processInfoKey = ""
+		processInfoVal = nil
+	}
+	if processTokenCacheKey == key {
+		processTokenCache = ""
+		processTokenCacheKey = ""
+		processTokenExpiresAt = time.Time{}
+	}
+}
+
+// ClearProcessTokenCache resets the in-process token cache and session.
 // Used when switching instances mid-process (e.g., multi-instance group operations).
 func ClearProcessTokenCache() {
 	processTokenCache = ""
 	processTokenCacheKey = ""
 	processTokenExpiresAt = time.Time{}
+	processInfoKey = ""
+	processInfoVal = nil
 }
 
 // GetTokenForRequest is a convenience function for API requests that handles
 // credential gathering from settings/env and token resolution.
-// Returns the token string or an error.
+// Returns the token string or an error. OWLCTL_PASSWORD is only needed when
+// no stored session can supply or renew a token.
 func GetTokenForRequest(profileName string, profile models.Profile, settings models.Settings) (string, error) {
+	return tokenForRequest(profileName, profile, settings, "")
+}
+
+// RenewTokenAfter401 returns a fresh token after the server answered 401 to
+// rejected: it renews through the refresh token, then the password. Callers
+// retry the request once with the result and never again.
+func RenewTokenAfter401(profileName string, profile models.Profile, settings models.Settings, rejected string) (string, error) {
+	return tokenForRequest(profileName, profile, settings, rejected)
+}
+
+func tokenForRequest(profileName string, profile models.Profile, settings models.Settings, rejected string) (string, error) {
 	// Check if explicit token is set (highest priority)
 	if token := os.Getenv(TokenEnvVar); token != "" {
 		if isValidTokenFormat(token) {
+			if token == rejected {
+				return "", errors.New("OWLCTL_TOKEN was rejected by the server (401); it cannot be renewed")
+			}
 			return token, nil
 		}
 	}
 
 	// Check in-process cache (avoids repeated keyring opens and re-authentication)
 	kcKey := keychainKey(profileName)
-	if processTokenCache != "" && processTokenCacheKey == kcKey && time.Now().Before(processTokenExpiresAt) {
+	if processTokenCache != "" && processTokenCache != rejected && processTokenCacheKey == kcKey && time.Now().Before(processTokenExpiresAt) {
 		return processTokenCache, nil
 	}
 
-	// Get credentials from environment variables
-	// Note: With v1.0 profiles, credentials are no longer stored in profiles.json
+	// Credentials come from environment variables (profiles.json holds none).
 	username := os.Getenv("OWLCTL_USERNAME")
 	apiURL := os.Getenv("OWLCTL_URL")
 	password := os.Getenv("OWLCTL_PASSWORD")
 
-	if username == "" || apiURL == "" {
-		return "", errors.New("OWLCTL_USERNAME or OWLCTL_URL environment variable not set")
+	if apiURL == "" {
+		return "", errors.New("OWLCTL_URL environment variable not set")
 	}
 
-	if password == "" {
-		return "", errors.New("OWLCTL_PASSWORD environment variable not set")
-	}
-
-	// Create token manager and get token
 	tm, err := NewTokenManager(false) // debug=false for API requests
 	if err != nil {
 		return "", fmt.Errorf("failed to initialize token manager: %w", err)
 	}
 
-	// Get token (tries keychain → auto-auth) using instance-aware key
-	token, err := tm.GetToken(kcKey, profile, username, password, apiURL, settings.ApiNotSecure)
+	// Resolves env token → stored token → refresh → password using the instance-aware key.
+	token, expiresAt, err := tm.getToken(kcKey, profile, username, password, apiURL, settings.ApiNotSecure, rejected)
 	if err != nil {
 		return "", fmt.Errorf("failed to get authentication token: %w", err)
 	}
 
-	// Cache for subsequent calls in this process.
-	// Use a conservative 10-minute TTL — VBR tokens expire in 15 minutes,
-	// so this provides a safe margin while covering any realistic single-command duration.
-	processTokenCache = token
-	processTokenCacheKey = kcKey
-	processTokenExpiresAt = time.Now().Add(10 * time.Minute)
+	// Cache for subsequent calls in this process: at most 10 minutes, and never
+	// past the point where the token would be renewed anyway.
+	ttl := 10 * time.Minute
+	if !expiresAt.IsZero() {
+		if left := time.Until(expiresAt) - accessTokenSkew; left < ttl {
+			ttl = left
+		}
+	}
+	if ttl > 0 {
+		processTokenCache = token
+		processTokenCacheKey = kcKey
+		processTokenExpiresAt = time.Now().Add(ttl)
+	}
 
 	return token, nil
 }

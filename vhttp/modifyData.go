@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/shapedthought/owlctl/auth"
 	"github.com/shapedthought/owlctl/models"
 	"github.com/shapedthought/owlctl/utils"
 )
@@ -53,39 +52,30 @@ func sendRequestWithError(method string, url string, data interface{}, profile m
 	// Use APIPrefix from endpoints structure
 	connstring := fmt.Sprintf("https://%v:%v%v/%v", api_url, profile.Port, profile.Endpoints.APIPrefix, url)
 
-	var reqBody io.Reader
+	var jsonData []byte
 	if data != nil {
-		jsonData, err := json.Marshal(data)
+		var err error
+		jsonData, err = json.Marshal(data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
-		reqBody = bytes.NewReader(jsonData)
 	}
 
-	r, err := http.NewRequest(method, connstring, reqBody)
+	res, err := doAuthed(client, profile, settings, func() (*http.Request, error) {
+		var reqBody io.Reader
+		if jsonData != nil {
+			reqBody = bytes.NewReader(jsonData)
+		}
+		r, err := http.NewRequest(method, connstring, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		r.Header.Add("accept", profile.Headers.Accept)
+		r.Header.Add("Content-Type", "application/json")
+		return r, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	r.Header.Add("accept", profile.Headers.Accept)
-	r.Header.Add("Content-Type", "application/json")
-
-	// Get authentication token using TokenManager
-	token, err := auth.GetTokenForRequest(settings.SelectedProfile, profile, settings)
-	if err != nil {
-		return nil, fmt.Errorf("authentication failed: %w", err)
-	}
-
-	if profile.AuthType == "basic" {
-		r.Header.Add("x-RestSvcSessionId", token)
-	} else {
-		r.Header.Add("x-api-version", profile.Headers.XAPIVersion)
-		r.Header.Add("Authorization", "Bearer "+token)
-	}
-
-	res, err := client.Do(r)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, requestError(err)
 	}
 	defer res.Body.Close()
 
@@ -121,33 +111,26 @@ func sendRequest[T any](method string, url string, data interface{}, profile mod
 	// Use APIPrefix from endpoints structure
 	connstring := fmt.Sprintf("https://%v:%v%v/%v", api_url, profile.Port, profile.Endpoints.APIPrefix, url)
 
-	var reqBody io.Reader
+	var jsonData []byte
 	if data != nil {
-		jsonData, err := json.Marshal(data)
+		var err error
+		jsonData, err = json.Marshal(data)
 		utils.IsErr(err)
-		reqBody = bytes.NewReader(jsonData)
 	}
 
-	r, err := http.NewRequest(method, connstring, reqBody)
-	utils.IsErr(err)
-
-	r.Header.Add("accept", profile.Headers.Accept)
-	r.Header.Add("Content-Type", "application/json")
-
-	// Get authentication token using TokenManager
-	token, err := auth.GetTokenForRequest(settings.SelectedProfile, profile, settings)
-	if err != nil {
-		log.Fatalf("Authentication failed: %v", err)
-	}
-
-	if profile.AuthType == "basic" {
-		r.Header.Add("x-RestSvcSessionId", token)
-	} else {
-		r.Header.Add("x-api-version", profile.Headers.XAPIVersion)
-		r.Header.Add("Authorization", "Bearer "+token)
-	}
-
-	res, err := client.Do(r)
+	res, err := doAuthed(client, profile, settings, func() (*http.Request, error) {
+		var reqBody io.Reader
+		if jsonData != nil {
+			reqBody = bytes.NewReader(jsonData)
+		}
+		r, err := http.NewRequest(method, connstring, reqBody)
+		if err != nil {
+			return nil, err
+		}
+		r.Header.Add("accept", profile.Headers.Accept)
+		r.Header.Add("Content-Type", "application/json")
+		return r, nil
+	})
 	utils.IsErr(err)
 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {

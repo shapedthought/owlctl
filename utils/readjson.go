@@ -185,25 +185,6 @@ func ReadSettings() models.Settings {
 	return settings
 }
 
-func ReadHeader[T models.SendHeader | models.BasicAuthModel]() T {
-	var headers T
-
-	settingsPath := SettingPath()
-
-	headersFile := settingsPath + "headers.json"
-
-	j, err := os.Open(headersFile)
-	IsErr(err)
-
-	b, err := io.ReadAll(j)
-	IsErr(err)
-
-	err = json.Unmarshal(b, &headers)
-	IsErr(err)
-
-	return headers
-}
-
 func ReadCreds() models.CredSpec {
 	var creds models.CredSpec
 	yml, err := os.Open("creds.yaml")

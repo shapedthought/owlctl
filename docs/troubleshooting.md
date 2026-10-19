@@ -99,7 +99,7 @@ curl -k -u "username:password" https://vbr.example.com:9419/api/v1/jobs
 owlctl login
 ```
 
-**Note:** Tokens expire after a period of inactivity (varies by product).
+**Note:** VBR access tokens last 15 minutes, but owlctl renews them from the stored refresh token. You only need to log in again when the refresh token itself has expired or was rejected. See [Token Lifecycle](authentication.md#token-lifecycle).
 
 ### Profile Not Set
 
