@@ -21,6 +21,11 @@ const (
 	// accessTokenSkew is how much lifetime a stored access token must have left
 	// to be used as is; below it the token is renewed first.
 	accessTokenSkew = 60 * time.Second
+
+	// expireAccessEnvVar is a test-only hook (see CLAUDE.md): when "1", a stored
+	// access token is treated as expired so the refresh path runs. It does not
+	// affect OWLCTL_TOKEN.
+	expireAccessEnvVar = "OWLCTL_TEST_EXPIRE_ACCESS_TOKEN"
 )
 
 // TokenManager handles token storage and retrieval
@@ -129,7 +134,8 @@ func (tm *TokenManager) resolveSession(kcKey string, profile models.Profile, use
 		now := time.Now()
 
 		// 2. Stored access token
-		if info.Token != "" && info.Token != rejected && info.ExpiresAt.Sub(now) > accessTokenSkew {
+		forced := os.Getenv(expireAccessEnvVar) == "1" // test-only hook, see CLAUDE.md
+		if !forced && info.Token != "" && info.Token != rejected && info.ExpiresAt.Sub(now) > accessTokenSkew {
 			if tm.debug {
 				fmt.Fprintf(os.Stderr, "DEBUG: Using stored access token (expires %s)\n", info.ExpiresAt.Format(time.RFC3339))
 			}
@@ -149,13 +155,17 @@ func (tm *TokenManager) resolveSession(kcKey string, profile models.Profile, use
 			}
 			refreshErr = err
 			if errors.Is(err, ErrRefreshRejected) {
-				// The stored session is dead; stop retrying it.
-				tm.discard(kcKey)
+				// Refresh tokens are single-use, so another owlctl process may
+				// have rotated the pair first. Use what it stored; only discard
+				// when the stored item is still the one that was rejected.
+				if tok, exp, ok := tm.adoptRotated(kcKey, profile, info, rejected, apiURL, insecure); ok {
+					return tok, exp, nil
+				}
 			}
 			if tm.debug {
 				fmt.Fprintf(os.Stderr, "DEBUG: Token refresh failed: %v\n", err)
 			}
-		} else if !info.usableRefresh(now) {
+		} else if !forced && !info.usableRefresh(now) {
 			// Expired (or rejected) and nothing to renew it with.
 			tm.discard(kcKey)
 		}
@@ -181,6 +191,43 @@ func (tm *TokenManager) resolveSession(kcKey string, profile models.Profile, use
 		return "", time.Time{}, fmt.Errorf("stored session could not be renewed (%v): run 'owlctl login', or set OWLCTL_USERNAME/OWLCTL_PASSWORD", refreshErr)
 	}
 	return "", time.Time{}, errNoSession
+}
+
+// adoptRotated handles a rejected refresh token. It re-reads the stored item:
+// if another process replaced it (different refresh or access token), that
+// item is used (its access token if it has more than 60s left, else one more
+// refresh with its new refresh token) and is not deleted. If the stored item
+// is still the rejected one it is discarded. ok is false when no token was
+// obtained.
+func (tm *TokenManager) adoptRotated(kcKey string, profile models.Profile, tried *TokenInfo, rejected, apiURL string, insecure bool) (string, time.Time, bool) {
+	cur := tm.loadInfo(kcKey, apiURL, profile.Port)
+	if cur == nil || (cur.RefreshToken == tried.RefreshToken && cur.Token == tried.Token) {
+		tm.discard(kcKey) // still the rejected session (or already gone)
+		return "", time.Time{}, false
+	}
+	if tm.debug {
+		fmt.Fprintln(os.Stderr, "DEBUG: Stored session was replaced by another process; using it")
+	}
+
+	now := time.Now()
+	if cur.Token != "" && cur.Token != rejected && cur.ExpiresAt.Sub(now) > accessTokenSkew {
+		return cur.Token, cur.ExpiresAt, true
+	}
+	if cur.RefreshToken != tried.RefreshToken && cur.usableRefresh(now) {
+		res, err := NewAuthenticator(insecure, tm.debug).Refresh(profile, cur.RefreshToken, apiURL)
+		if err == nil {
+			return res.Token, tm.storeSession(kcKey, res, apiURL, profile.Port), true
+		}
+		if !errors.Is(err, ErrRefreshRejected) {
+			return "", time.Time{}, false
+		}
+	}
+	// Nothing usable in the replacement: discard it only if no newer item has
+	// appeared since it was read.
+	if latest := tm.loadInfo(kcKey, apiURL, profile.Port); latest == nil || (latest.RefreshToken == cur.RefreshToken && latest.Token == cur.Token) {
+		tm.discard(kcKey)
+	}
+	return "", time.Time{}, false
 }
 
 // StoreToken stores an access token with no refresh token or server binding.

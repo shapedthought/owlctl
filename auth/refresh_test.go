@@ -57,6 +57,10 @@ type mockVBR struct {
 	logoutCalls   int
 	logoutBearer  string
 	profile       models.Profile
+
+	// beforeRefresh, when set, runs once before the next refresh grant is
+	// handled; tests use it to simulate a second owlctl process.
+	beforeRefresh func()
 }
 
 func newMockVBR(t *testing.T) *mockVBR {
@@ -87,6 +91,13 @@ func (m *mockVBR) issue() (access, refresh string) {
 
 func (m *mockVBR) token(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
+	if r.FormValue("grant_type") == "refresh_token" && m.beforeRefresh != nil {
+		m.mu.Lock()
+		hook := m.beforeRefresh
+		m.beforeRefresh = nil // fire once
+		m.mu.Unlock()
+		hook()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	switch r.FormValue("grant_type") {
@@ -249,6 +260,126 @@ func TestGetToken_SecondRefreshUsesRotatedToken(t *testing.T) {
 	}
 	if storedInfo(t, kr, "vbr").RefreshToken == rotated {
 		t.Error("second rotation was not stored")
+	}
+}
+
+// simulateOtherProcess makes the mock behave as if a second owlctl process
+// refreshed first: the next refresh call finds its token already spent and the
+// keyring holds the pair that process stored. accessLeft is the new access
+// token's remaining life. It returns the new refresh token.
+func simulateOtherProcess(m *mockVBR, kr *mockKeyring, t *testing.T, spent string, accessLeft time.Duration) (newRefresh string) {
+	m.mu.Lock()
+	access, refresh := m.issue()
+	m.mu.Unlock()
+	m.beforeRefresh = func() {
+		m.mu.Lock()
+		delete(m.validRefresh, spent)
+		m.mu.Unlock()
+		info := expiredSession(m, refresh)
+		info.Token, info.ExpiresAt = access, time.Now().Add(accessLeft)
+		seedInfo(t, kr, "vbr", info)
+	}
+	return refresh
+}
+
+// Concurrent refresh: the other process won the race. Its stored session must be
+// used and left in place, not deleted.
+func TestGetToken_ConcurrentRefreshUsesOtherProcessAccessToken(t *testing.T) {
+	t.Setenv(TokenEnvVar, "")
+	m := newMockVBR(t)
+	kr := newMockKeyring()
+	tm := newTestTokenManager(kr)
+	r1 := m.newRefreshToken()
+	seedInfo(t, kr, "vbr", expiredSession(m, r1))
+	r2 := simulateOtherProcess(m, kr, t, r1, 10*time.Minute)
+
+	token, err := tm.GetToken("vbr", m.profile, "", "", testHost, true)
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	info := storedInfo(t, kr, "vbr")
+	if token != info.Token || info.RefreshToken != r2 {
+		t.Error("the other process's session was not used and kept")
+	}
+	if _, rf := m.calls(); rf != 1 {
+		t.Errorf("refresh calls = %d, want 1 (no second refresh needed)", rf)
+	}
+}
+
+// Concurrent refresh where the other process's access token is already short:
+// one more refresh with its new refresh token, and the new pair is stored.
+func TestGetToken_ConcurrentRefreshRefreshesWithNewRefreshToken(t *testing.T) {
+	t.Setenv(TokenEnvVar, "")
+	m := newMockVBR(t)
+	kr := newMockKeyring()
+	tm := newTestTokenManager(kr)
+	r1 := m.newRefreshToken()
+	seedInfo(t, kr, "vbr", expiredSession(m, r1))
+	r2 := simulateOtherProcess(m, kr, t, r1, 10*time.Second)
+
+	token, err := tm.GetToken("vbr", m.profile, "", "", testHost, true)
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if len(m.refreshSeen) != 2 || m.refreshSeen[0] != r1 || m.refreshSeen[1] != r2 {
+		t.Error("expected a refresh with the old token, then one with the other process's token")
+	}
+	info := storedInfo(t, kr, "vbr")
+	if info.Token != token || info.RefreshToken == r2 || info.RefreshToken == "" {
+		t.Error("the second rotation was not stored")
+	}
+}
+
+// The test hook forces the refresh path even though the access token is valid,
+// without printing or storing anything secret beyond the normal rotation.
+func TestGetToken_TestHookForcesRefresh(t *testing.T) {
+	t.Setenv(TokenEnvVar, "")
+	t.Setenv(expireAccessEnvVar, "1")
+	m := newMockVBR(t)
+	kr := newMockKeyring()
+	tm := newTestTokenManager(kr)
+	info := expiredSession(m, m.newRefreshToken())
+	info.Token, info.ExpiresAt = "still-good-token", time.Now().Add(10*time.Minute)
+	seedInfo(t, kr, "vbr", info)
+
+	token, err := tm.GetToken("vbr", m.profile, "", "", testHost, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token == "still-good-token" {
+		t.Error("valid access token was used despite the test hook")
+	}
+	if _, rf := m.calls(); rf != 1 {
+		t.Errorf("refresh calls = %d, want 1", rf)
+	}
+	if storedInfo(t, kr, "vbr").Token != token {
+		t.Error("renewed session was not stored")
+	}
+}
+
+// The hook only applies when exactly "1", and never touches OWLCTL_TOKEN.
+func TestGetToken_TestHookIgnoredUnlessOneAndLeavesEnvToken(t *testing.T) {
+	m := newMockVBR(t)
+	kr := newMockKeyring()
+	tm := newTestTokenManager(kr)
+	info := expiredSession(m, m.newRefreshToken())
+	info.Token, info.ExpiresAt = "still-good-token", time.Now().Add(10*time.Minute)
+	seedInfo(t, kr, "vbr", info)
+
+	t.Setenv(TokenEnvVar, "")
+	t.Setenv(expireAccessEnvVar, "0")
+	if token, err := tm.GetToken("vbr", m.profile, "", "", testHost, true); err != nil || token != "still-good-token" {
+		t.Fatalf("hook=0: got %q, %v", token, err)
+	}
+
+	envTok := fakeJWT(time.Now().Add(time.Hour), 42)
+	t.Setenv(TokenEnvVar, envTok)
+	t.Setenv(expireAccessEnvVar, "1")
+	if token, err := tm.GetToken("vbr", m.profile, "", "", testHost, true); err != nil || token != envTok {
+		t.Fatalf("OWLCTL_TOKEN must win and be unaffected by the hook: %v", err)
+	}
+	if pw, rf := m.calls(); pw+rf != 0 {
+		t.Errorf("unexpected server calls: %d password, %d refresh", pw, rf)
 	}
 }
 

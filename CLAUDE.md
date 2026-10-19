@@ -65,6 +65,10 @@ The login process:
 
 Token resolution (`auth/token_manager.go`): `OWLCTL_TOKEN` → stored access token (>60s left) → stored refresh token (`grant_type=refresh_token`, single-use, new pair stored immediately) → password login from env → error telling the user to run `owlctl login`. A 401 renews once and retries once (`vhttp/authrequest.go`). `owlctl logout` calls `/api/oauth2/logout` and deletes the stored item. Enterprise Manager has no refresh token.
 
+If a refresh is rejected, `resolveSession` re-reads the stored item: when another process rotated it meanwhile, that item is used (or refreshed once more) and kept; only an unchanged rejected item is discarded.
+
+**Test-only hook:** `OWLCTL_TEST_EXPIRE_ACCESS_TOKEN=1` makes the stored access token count as expired so the refresh path runs without waiting 15 minutes. It does not affect `OWLCTL_TOKEN`, prints nothing, and is deliberately undocumented in `docs/`.
+
 ### Profile System
 
 Each Veeam product has a profile in `profiles.json` containing:

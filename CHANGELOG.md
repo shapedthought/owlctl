@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Two owlctl processes refreshing the same stored session no longer log the user out: when a refresh is rejected, owlctl re-reads the stored item and uses the session another process just stored instead of deleting it (#214).
 - owlctl no longer hangs when the keychain or file keyring wants to prompt in a script, CI job, ssh session or `< /dev/null`: a blocked keyring times out with a one-line stderr hint and owlctl falls back to the environment credentials (#209, #214).
 - Payload files passed with `-f` to `post`/`put` that start with a UTF-8 BOM are no longer rejected by the JSON/YAML parser (#210).
 - `owlctl post` and `owlctl put` now print the response body on success instead of discarding it. JSON is pretty-printed, other bodies are printed raw, and an empty body (e.g. 204) prints nothing. The `Status Code:` / `Status:` lines moved to stderr so stdout is pipe-friendly (`owlctl post ... | jq .id`). Non-2xx behaviour is unchanged (#208).
