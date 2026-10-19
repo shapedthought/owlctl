@@ -106,7 +106,7 @@ func loginWithTokenManager() {
 	}
 
 	// Store token in keychain if interactive (not CI/CD)
-	if auth.IsCI() {
+	if auth.IsCI() && !tm.StorageEnabled() {
 		if debugAuth {
 			fmt.Fprintln(os.Stderr, "DEBUG: CI/CD environment detected, skipping keychain storage")
 		}
@@ -123,9 +123,18 @@ func loginWithTokenManager() {
 				fmt.Fprintf(os.Stderr, "DEBUG: Token stored in system keychain for key '%s'\n", keychainStorageKey)
 			}
 		}
-		if instanceFlag != "" {
+		note := ""
+		if !tm.StorageEnabled() {
+			note = "token not stored: keyring disabled; set OWLCTL_KEYRING to store it"
+		}
+		switch {
+		case instanceFlag != "" && note != "":
+			fmt.Printf("Login OK (instance: %s; %s)\n", instanceFlag, note)
+		case instanceFlag != "":
 			fmt.Printf("Login OK (instance: %s)\n", instanceFlag)
-		} else {
+		case note != "":
+			fmt.Printf("Login OK (%s)\n", note)
+		default:
 			fmt.Println("Login OK")
 		}
 	}

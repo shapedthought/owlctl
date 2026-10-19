@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/99designs/keyring"
@@ -19,8 +20,12 @@ const (
 
 // TokenManager handles token storage and retrieval
 type TokenManager struct {
-	keyring keyring.Keyring
-	debug   bool
+	keyring  keyring.Keyring // nil when storage is disabled
+	debug    bool
+	backend  string
+	timeout  time.Duration // 0 = no timeout
+	timedOut bool
+	hintOnce sync.Once
 }
 
 // TokenInfo holds token metadata
@@ -31,62 +36,9 @@ type TokenInfo struct {
 	Profile   string    `json:"profile"`
 }
 
-// NewTokenManager creates a new token manager
-func NewTokenManager(debug bool) (*TokenManager, error) {
-	// Try to open system keychain
-	// Use file backend as fallback for systems without keychain
-	// Get home directory for file backend
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir = "." // Fallback to current directory if home not available
-	}
-
-	kr, err := keyring.Open(keyring.Config{
-		ServiceName:  KeyringService,
-		KeychainName: "owlctl",
-		FileDir:      homeDir + "/.owlctl",
-		FilePasswordFunc: func(prompt string) (string, error) {
-			// Check environment variable first (allows non-interactive configuration)
-			if pw := os.Getenv("OWLCTL_FILE_KEY"); pw != "" {
-				return pw, nil
-			}
-
-			// Prompt for password in interactive mode
-			if term.IsTerminal(int(os.Stdin.Fd())) {
-				if prompt == "" {
-					prompt = "Enter password for owlctl file keyring: "
-				}
-				fmt.Fprint(os.Stderr, prompt)
-				pwBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-				fmt.Fprintln(os.Stderr)
-				if err != nil {
-					return "", fmt.Errorf("failed to read password: %w", err)
-				}
-				if len(pwBytes) == 0 {
-					return "", errors.New("empty password not allowed")
-				}
-				return string(pwBytes), nil
-			}
-
-			// Non-interactive mode without OWLCTL_FILE_KEY
-			// This shouldn't happen in CI/CD as keyring is not used there
-			return "", errors.New("OWLCTL_FILE_KEY environment variable required for file keyring in non-interactive mode")
-		},
-		AllowedBackends: []keyring.BackendType{
-			keyring.KeychainBackend,      // macOS
-			keyring.WinCredBackend,       // Windows
-			keyring.SecretServiceBackend, // Linux
-			keyring.FileBackend,          // Fallback
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to open keyring: %w", err)
-	}
-
-	return &TokenManager{
-		keyring: kr,
-		debug:   debug,
-	}, nil
+// StorageEnabled reports whether tokens can be persisted (a keyring is open).
+func (tm *TokenManager) StorageEnabled() bool {
+	return tm.keyring != nil
 }
 
 // keychainKey returns the effective keychain key for token storage/retrieval.
@@ -143,8 +95,9 @@ func (tm *TokenManager) GetToken(profileName string, profile models.Profile, use
 			return "", fmt.Errorf("auto-authentication failed: %w", err)
 		}
 
-		// Store in keychain if interactive session (not CI/CD)
-		if isInteractiveSession() {
+		// Store only when a keyring is active (never in non-interactive sessions
+		// unless the user chose a backend via OWLCTL_KEYRING)
+		if tm.StorageEnabled() {
 			if tm.debug {
 				fmt.Fprintln(os.Stderr, "DEBUG: Storing token in keychain (interactive session)")
 			}
@@ -166,6 +119,9 @@ func (tm *TokenManager) GetToken(profileName string, profile models.Profile, use
 
 // StoreToken stores a token in the system keychain
 func (tm *TokenManager) StoreToken(profileName, token string, expiresIn int) error {
+	if tm.keyring == nil {
+		return nil // storage disabled: nothing to persist
+	}
 	info := TokenInfo{
 		Token:     token,
 		IssuedAt:  time.Now(),
@@ -183,7 +139,7 @@ func (tm *TokenManager) StoreToken(profileName, token string, expiresIn int) err
 		Data: data,
 	}
 
-	if err := tm.keyring.Set(item); err != nil {
+	if err := tm.keyringCall(func(kr keyring.Keyring) error { return kr.Set(item) }); err != nil {
 		return fmt.Errorf("failed to store token in keychain: %w", err)
 	}
 
@@ -192,7 +148,7 @@ func (tm *TokenManager) StoreToken(profileName, token string, expiresIn int) err
 
 // getTokenFromKeychain retrieves token from system keychain
 func (tm *TokenManager) getTokenFromKeychain(profileName string) (string, error) {
-	item, err := tm.keyring.Get(profileName)
+	item, err := tm.keyringGet(profileName)
 	if err != nil {
 		return "", fmt.Errorf("token not found in keychain: %w", err)
 	}
@@ -208,7 +164,7 @@ func (tm *TokenManager) getTokenFromKeychain(profileName string) (string, error)
 			fmt.Fprintln(os.Stderr, "DEBUG: Keychain token expired")
 		}
 		// Remove expired token
-		tm.keyring.Remove(profileName)
+		_ = tm.keyringCall(func(kr keyring.Keyring) error { return kr.Remove(profileName) })
 		return "", errors.New("token expired")
 	}
 
@@ -217,7 +173,10 @@ func (tm *TokenManager) getTokenFromKeychain(profileName string) (string, error)
 
 // DeleteToken removes a token from keychain
 func (tm *TokenManager) DeleteToken(profileName string) error {
-	return tm.keyring.Remove(profileName)
+	if tm.keyring == nil {
+		return nil // nothing is stored when storage is disabled
+	}
+	return tm.keyringCall(func(kr keyring.Keyring) error { return kr.Remove(profileName) })
 }
 
 // AuthenticateWithSettings performs OAuth login with settings context
@@ -258,14 +217,14 @@ func isInteractiveSession() bool {
 
 	// Check for common CI/CD environment variables
 	ciEnvVars := []string{
-		"CI",                    // Generic CI indicator
-		"GITHUB_ACTIONS",        // GitHub Actions
-		"GITLAB_CI",             // GitLab CI
-		"JENKINS_HOME",          // Jenkins
-		"CIRCLECI",              // CircleCI
-		"TRAVIS",                // Travis CI
-		"TF_BUILD",              // Azure DevOps
-		"CODEBUILD_BUILD_ID",    // AWS CodeBuild
+		"CI",                     // Generic CI indicator
+		"GITHUB_ACTIONS",         // GitHub Actions
+		"GITLAB_CI",              // GitLab CI
+		"JENKINS_HOME",           // Jenkins
+		"CIRCLECI",               // CircleCI
+		"TRAVIS",                 // Travis CI
+		"TF_BUILD",               // Azure DevOps
+		"CODEBUILD_BUILD_ID",     // AWS CodeBuild
 		"BITBUCKET_BUILD_NUMBER", // Bitbucket Pipelines
 	}
 
