@@ -11,8 +11,8 @@ import (
 )
 
 // NewTokenManager creates a new token manager. The storage backend is chosen by
-// OWLCTL_KEYRING (see chooseKeyring). When storage is disabled (OWLCTL_KEYRING=none,
-// or a non-interactive session with the default setting) no keyring is opened and
+// OWLCTL_KEYRING (see chooseKeyring). When storage is disabled (OWLCTL_KEYRING=none)
+// no keyring is opened and
 // the manager authenticates from the environment on every process.
 //
 // If the backend picked by "auto" cannot be opened (not compiled into this build,

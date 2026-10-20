@@ -25,8 +25,8 @@ Tokens are kept in a system keyring (OWLCTL_KEYRING selects the backend), never 
 plaintext files. VBR sessions are stored as an access token plus a refresh token,
 so later commands renew the 15-minute access token themselves and do not need
 OWLCTL_PASSWORD until the refresh token expires. The password is never stored.
-In CI/CD and other non-interactive shells nothing is stored unless OWLCTL_KEYRING
-names a backend; use --output-token to capture an access token instead.
+The backend does not depend on whether a terminal is attached; OWLCTL_KEYRING=none
+disables storage. Use --output-token to capture an access token instead.
 
 Token resolution for every command (in priority order):
 1. OWLCTL_TOKEN environment variable

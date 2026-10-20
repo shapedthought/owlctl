@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- On macOS (cgo builds), `owlctl login` stored the session in the login Keychain but commands run without a terminal (`< /dev/null`, scripts) did not read it, because the default `OWLCTL_KEYRING=auto` acted as `none` there. `auto` now picks the same backend with or without a terminal or CI variables; only the keyring timeout differs. This supersedes the earlier "non-interactive sessions skip every backend" entry; use `OWLCTL_KEYRING=none` to skip the keyring (#214).
+- `owlctl logout` now also removes the refresh lock file, and a rejected refresh no longer deletes the stored session when the keyring read failed (only when the item was read and is still the rejected one) (#214).
 - Two owlctl processes refreshing the same stored session no longer log the user out: when a refresh is rejected, owlctl re-reads the stored item and uses the session another process just stored instead of deleting it (#214).
 - Token refresh is now serialised across owlctl processes with an advisory lock file (`~/.owlctl/<key>.lock`, bounded wait), and a rejected refresh is rechecked for about 1.5s and only deletes the stored session if it is still exactly the rejected one, so a winner that stores its rotated pair late is no longer deleted (#214).
 - owlctl no longer hangs when the keychain or file keyring wants to prompt in a script, CI job, ssh session or `< /dev/null`: a blocked keyring times out with a one-line stderr hint and owlctl falls back to the environment credentials (#209, #214).

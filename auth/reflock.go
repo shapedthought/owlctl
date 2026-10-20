@@ -58,3 +58,8 @@ func (tm *TokenManager) lockRefresh(key string) (release func()) {
 		f.Close()
 	}
 }
+
+// removeLockFile deletes the lock file for a key (best effort, used on logout).
+func removeLockFile(key string) {
+	_ = os.Remove(lockPath(key))
+}

@@ -280,7 +280,7 @@ So after one `owlctl login`, commands keep working past 15 minutes with `OWLCTL_
 
 Enterprise Manager sessions have no refresh token and behave as before: the session is stored and re-created with the password when it expires.
 
-With `OWLCTL_KEYRING=none` (and in non-interactive sessions by default) nothing is stored between processes, but within one process a `401` is still renewed through the refresh token.
+With `OWLCTL_KEYRING=none` nothing is stored between processes, but within one process a `401` is still renewed through the refresh token.
 
 **Server binding.** Each stored item records the server hostname (`OWLCTL_URL`) and port it was issued by, and is never used for a different one. Items stored by older versions (which recorded no server) are ignored once, so run `owlctl login` again after upgrading. Named instances keep separate items (`instance:<name>`).
 
@@ -296,20 +296,20 @@ With `OWLCTL_KEYRING=none` (and in non-interactive sessions by default) nothing 
 
 | Value | Behaviour |
 |-------|-----------|
-| `auto` (default) | Interactive terminal: macOS login keychain, Windows Credential Manager, Linux Secret Service (when `DBUS_SESSION_BUS_ADDRESS` is set) or the file keyring otherwise. **Non-interactive** (stdin is not a terminal, or a CI variable such as `CI` is set): behaves as `none`. |
+| `auto` (default) | macOS login keychain, Windows Credential Manager, Linux Secret Service (when `DBUS_SESSION_BUS_ADDRESS` is set) or the file keyring otherwise. The choice is the same with or without a terminal, so `login`, token renewal and every other command always use the same backend; only the timeout differs. |
 | `keychain` | macOS Keychain. Only available in builds with cgo (see below). |
 | `secret-service` | Linux Secret Service (GNOME Keyring, KWallet). |
 | `wincred` | Windows Credential Manager. |
 | `file` | Encrypted file keyring in `~/.owlctl`. Needs `OWLCTL_FILE_KEY` or a terminal; with neither, owlctl exits with an error instead of prompting. |
 | `none` | Never opens a keyring or stores a token. Every process authenticates from `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL` (or uses `OWLCTL_TOKEN`). |
 
-An unknown value is an error. Naming a backend explicitly overrides the non-interactive rule, so `OWLCTL_KEYRING=file` plus `OWLCTL_FILE_KEY` stores tokens in CI.
+An unknown value is an error. In CI, set `OWLCTL_KEYRING=file` plus `OWLCTL_FILE_KEY` to store tokens, or `OWLCTL_KEYRING=none` to store nothing.
 
 #### Non-Interactive Sessions and Timeouts
 
 Keychain unlock dialogs and file-keyring passphrase prompts cannot be answered from scripts, CI, ssh sessions, IDE tasks or `< /dev/null`, and used to make owlctl hang. Now:
 
-- With the default `auto`, any non-interactive session skips every backend that could prompt and authenticates from the environment.
+- With the default `auto`, the backend is the same in interactive and non-interactive sessions; a backend that cannot respond (a locked keychain, a file keyring with no `OWLCTL_FILE_KEY`) fails or times out and owlctl authenticates from the environment instead. Use `OWLCTL_KEYRING=none` to skip the keyring entirely.
 - Every keyring read, write and delete has a timeout (default 60 seconds when stdin is an interactive terminal and `CI`/`TF_BUILD` are not set, 5 seconds otherwise; set `OWLCTL_KEYRING_TIMEOUT` to a Go duration such as `15s` or a number of seconds). On timeout owlctl prints one line to stderr naming `OWLCTL_TOKEN` and `OWLCTL_KEYRING=none`, stops using the keyring for the rest of the process, and falls back to the environment credentials.
 - The 60 second interactive default leaves time to approve a macOS Keychain dialog; raise `OWLCTL_KEYRING_TIMEOUT` if you need longer. The file keyring is exempt, since it waits for your passphrase.
 

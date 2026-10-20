@@ -89,8 +89,8 @@ func currentKeyringEnv() keyringEnv {
 	}
 }
 
-// chooseKeyring decides which backend (if any) to open. It never opens anything
-// that could prompt in a non-interactive session unless the user asked for it.
+// chooseKeyring decides which backend (if any) to open. With "auto" the result
+// is independent of the terminal state (interactive only affects the timeout).
 func chooseKeyring(e keyringEnv) (keyringChoice, error) {
 	none := keyringChoice{name: keyringNone}
 
@@ -98,10 +98,8 @@ func chooseKeyring(e keyringEnv) (keyringChoice, error) {
 	case keyringNone:
 		return none, nil
 	case "", keyringAuto:
-		if !e.interactive {
-			// stdin not a TTY or CI: every backend might prompt, so act as "none".
-			return none, nil
-		}
+		// The choice never depends on whether a terminal is attached, so login,
+		// refresh and reads always use the same backend; only the timeout differs.
 		// Only pick a backend compiled into this build (the cgo-free darwin
 		// release binaries have no Keychain); otherwise use the file keyring.
 		preferred := keyringChoice{keyring.FileBackend, keyringFile, true}
@@ -167,5 +165,5 @@ func keyringTimeout(interactive bool) time.Duration {
 	return def
 }
 
-var errKeyringDisabled = errors.New("token storage disabled (OWLCTL_KEYRING=none or non-interactive session)")
+var errKeyringDisabled = errors.New("token storage disabled (OWLCTL_KEYRING=none)")
 var errKeyringTimeout = errors.New("keyring operation timed out")

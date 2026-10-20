@@ -167,8 +167,8 @@ func (tm *TokenManager) resolveSession(kcKey string, profile models.Profile, use
 		if err != nil {
 			return "", time.Time{}, fmt.Errorf("auto-authentication failed: %w", err)
 		}
-		// StoreSession is a no-op when no keyring is active (never in
-		// non-interactive sessions unless OWLCTL_KEYRING names a backend).
+		// StoreSession is a no-op when no keyring is active (only with
+		// OWLCTL_KEYRING=none).
 		exp := tm.storeSession(kcKey, res, apiURL, profile.Port)
 		return res.Token, exp, nil
 	}
@@ -248,7 +248,10 @@ func (tm *TokenManager) refreshLocked(kcKey string, profile models.Profile, info
 		}
 		if next == nil {
 			// Delete only if the item is still exactly the rejected one.
-			if latest, rerr := tm.readStored(kcKey); rerr != nil || !sessionChanged(latest, cur) {
+			// A failed read is not confirmation, so nothing is deleted then.
+			if tm.keyring == nil {
+				tm.discard(kcKey) // clears the in-process copy only
+			} else if latest, rerr := tm.readStored(kcKey); rerr == nil && !sessionChanged(latest, cur) {
 				tm.discard(kcKey)
 			}
 			return "", time.Time{}, err
@@ -390,7 +393,9 @@ func (tm *TokenManager) Logout(profileName string, profile models.Profile, apiUR
 		}
 	}
 
-	if derr := tm.DeleteToken(key); derr != nil && remoteErr == nil {
+	derr := tm.DeleteToken(key)
+	removeLockFile(key)
+	if derr != nil && remoteErr == nil {
 		remoteErr = fmt.Errorf("failed to remove stored token: %w", derr)
 	}
 	return true, remoteErr
