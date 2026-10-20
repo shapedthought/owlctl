@@ -315,6 +315,10 @@ Keychain unlock dialogs and file-keyring passphrase prompts cannot be answered f
 
 #### macOS Keychain
 
+**Rebuilt binaries and "Always Allow".** The Keychain decides whether to prompt by the binary's code signature. A binary you build yourself with `go build` is ad-hoc signed, so every rebuild is a new binary the existing item does not trust: its first read, write or delete prompts, and you need to choose **Always Allow** once per build. Choosing only "Allow" prompts again on the next operation, which is why you may see several prompts in a row. Release binaries keep one signature, so this mainly affects local builds. Resetting the item (`owlctl logout`, then `owlctl login`) also needs one approval if the old item was created by a different build.
+
+The prompt is a GUI dialog: redirecting stdin (`< /dev/null`) does not suppress it. For that reason the Keychain backend waits up to 60 seconds for an answer even without a terminal (`OWLCTL_KEYRING_TIMEOUT` overrides it). If it still times out, owlctl says a Keychain prompt may be waiting; answer it, run `security unlock-keychain` if the login keychain is locked, or use `OWLCTL_KEYRING=none` in scripts that cannot show a dialog.
+
 On macOS, tokens go in your **login** keychain (not a separate `owlctl.keychain`), and owlctl is marked as a trusted application on the item, so reads should not raise a confirmation dialog each time.
 
 The Keychain backend needs a cgo build. Binaries built from source on a Mac (`go build`) include it. The cross-compiled release binaries for macOS do not, so with `OWLCTL_KEYRING=auto` they use the file keyring instead (an explicit `OWLCTL_KEYRING=keychain` fails with a "not available in this build" error). With the file keyring, either set `OWLCTL_FILE_KEY` or expect a passphrase prompt in each new interactive process; or use `OWLCTL_KEYRING=none` and supply credentials from the environment. Check which you have with `go version -m $(which owlctl)` (`CGO_ENABLED=1` means Keychain is available).

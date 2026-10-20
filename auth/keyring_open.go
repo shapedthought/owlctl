@@ -38,8 +38,12 @@ func NewTokenManager(debug bool) (*TokenManager, error) {
 	}
 
 	// KeychainName is deliberately unset: the user's login keychain is used so
-	// there is no separate auto-locking keychain, and KeychainTrustApplication
-	// avoids a confirmation prompt on every read.
+	// there is no separate auto-locking keychain. KeychainTrustApplication puts
+	// the creating binary on the item's access list; the backend's Set updates an
+	// existing item in place (no delete and re-create, access list untouched so
+	// an update does not prompt again). macOS identifies the binary by its code
+	// signature, so an ad-hoc rebuild is a new, untrusted binary for items an
+	// earlier build created.
 	cfg := keyring.Config{
 		ServiceName:              KeyringService,
 		KeychainTrustApplication: true,
@@ -72,7 +76,7 @@ func NewTokenManager(debug bool) (*TokenManager, error) {
 		AllowedBackends: []keyring.BackendType{choice.backend},
 	}
 
-	tm := &TokenManager{debug: debug, backend: choice.name, timeout: keyringTimeout(kenv.interactive)}
+	tm := &TokenManager{debug: debug, backend: choice.name, timeout: keyringTimeout(kenv.interactive || waitsOnPrompt(choice.backend))}
 	if choice.backend == keyring.FileBackend {
 		// The file backend may legitimately wait on the user typing a passphrase.
 		tm.timeout = 0
@@ -119,8 +123,20 @@ func (tm *TokenManager) openKeyring(cfg keyring.Config) (keyring.Keyring, error)
 	}
 }
 
+// waitsOnPrompt reports whether the backend can show a GUI prompt that a person
+// must answer regardless of stdin (the macOS Keychain access and unlock
+// dialogs). Redirecting stdin does not suppress it, so the short non-interactive
+// timeout would give up before the user can click.
+func waitsOnPrompt(b keyring.BackendType) bool {
+	return b == keyring.KeychainBackend
+}
+
 func (tm *TokenManager) printTimeoutHint() {
 	tm.hintOnce.Do(func() {
+		if tm.backend == keyringKeychain {
+			fmt.Fprintf(os.Stderr, "owlctl: keyring did not respond within %s; a macOS Keychain prompt may be waiting for your answer (look for a dialog, possibly behind other windows). Continuing without stored tokens. Choose \"Always Allow\" in the prompt, run 'security unlock-keychain' if the login keychain is locked, raise OWLCTL_KEYRING_TIMEOUT, or set OWLCTL_TOKEN or OWLCTL_KEYRING=none to skip the keyring.\n", tm.timeout)
+			return
+		}
 		fmt.Fprintf(os.Stderr, "owlctl: keyring did not respond within %s; continuing without stored tokens. Set OWLCTL_TOKEN or OWLCTL_KEYRING=none to skip the keyring (OWLCTL_KEYRING_TIMEOUT adjusts the wait).\n", tm.timeout)
 	})
 }
