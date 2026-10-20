@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `owlctl login` no longer prints a plain `Login OK` when the token could not be stored (for example the file keyring without `OWLCTL_FILE_KEY`). It prints `Login OK (token not stored: <reason>)`, with the instance variant, and the stderr warning names the fix: set `OWLCTL_FILE_KEY`, or `OWLCTL_KEYRING=none` to skip storage (#214).
 - On macOS (cgo builds), `owlctl login` stored the session in the login Keychain but commands run without a terminal (`< /dev/null`, scripts) did not read it, because the default `OWLCTL_KEYRING=auto` acted as `none` there. `auto` now picks the same backend with or without a terminal or CI variables; only the keyring timeout differs. This supersedes the earlier "non-interactive sessions skip every backend" entry; use `OWLCTL_KEYRING=none` to skip the keyring (#214).
 - `owlctl logout` now also removes the refresh lock file, and a rejected refresh no longer deletes the stored session when the keyring read failed (only when the item was read and is still the rejected one) (#214).
 - Two owlctl processes refreshing the same stored session no longer log the user out: when a refresh is rejected, owlctl re-reads the stored item and uses the session another process just stored instead of deleting it (#214).

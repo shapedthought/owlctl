@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/shapedthought/owlctl/auth"
 	"github.com/shapedthought/owlctl/utils"
@@ -119,24 +120,42 @@ func loginWithTokenManager() {
 		return
 	}
 
-	if err := tm.StoreSession(keychainStorageKey, result, owlctlUrl, profile.Port); err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: Failed to store token in keychain: %v\n", err)
+	storeErr := tm.StoreSession(keychainStorageKey, result, owlctlUrl, profile.Port)
+	if storeErr != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: Failed to store token in keychain: %v\n", storeErr)
+		fmt.Fprintln(os.Stderr, "Fix: set OWLCTL_FILE_KEY (file keyring), or set OWLCTL_KEYRING=none to skip storage")
 		fmt.Fprintln(os.Stderr, "Token will need to be re-generated on next command")
 	} else if debugAuth {
 		fmt.Fprintf(os.Stderr, "DEBUG: Token stored for key '%s'\n", keychainStorageKey)
 	}
+	fmt.Println(loginStatusLine(instanceFlag, tm.StorageEnabled(), storeErr))
+}
+
+// loginStatusLine builds the stdout line. A plain "Login OK" is returned only
+// when the session was actually stored; the error is reduced to a short fixed
+// reason so no raw error text reaches stdout.
+func loginStatusLine(instance string, storageEnabled bool, storeErr error) string {
 	note := ""
-	if !tm.StorageEnabled() {
+	switch {
+	case !storageEnabled:
 		note = "token not stored: keyring disabled; set OWLCTL_KEYRING to store it"
+	case storeErr != nil:
+		note = "token not stored: " + shortStoreReason(storeErr)
 	}
 	switch {
-	case instanceFlag != "" && note != "":
-		fmt.Printf("Login OK (instance: %s; %s)\n", instanceFlag, note)
-	case instanceFlag != "":
-		fmt.Printf("Login OK (instance: %s)\n", instanceFlag)
+	case instance != "" && note != "":
+		return fmt.Sprintf("Login OK (instance: %s; %s)", instance, note)
+	case instance != "":
+		return fmt.Sprintf("Login OK (instance: %s)", instance)
 	case note != "":
-		fmt.Printf("Login OK (%s)\n", note)
-	default:
-		fmt.Println("Login OK")
+		return fmt.Sprintf("Login OK (%s)", note)
 	}
+	return "Login OK"
+}
+
+func shortStoreReason(err error) string {
+	if strings.Contains(err.Error(), "OWLCTL_FILE_KEY") {
+		return "OWLCTL_FILE_KEY not set; set it or use OWLCTL_KEYRING=none"
+	}
+	return "keyring write failed; set OWLCTL_KEYRING=none to skip storage"
 }
