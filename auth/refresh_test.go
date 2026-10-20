@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,6 +73,9 @@ func newMockVBR(t *testing.T) *mockVBR {
 	srv := httptest.NewTLSServer(mux)
 	t.Cleanup(srv.Close)
 	t.Cleanup(ClearProcessTokenCache)
+	// Keep refresh lock files out of the real home directory.
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	u, _ := url.Parse(srv.URL)
 	port, _ := strconv.Atoi(u.Port())
 	m.profile = vbrProfile()
@@ -327,6 +331,125 @@ func TestGetToken_ConcurrentRefreshRefreshesWithNewRefreshToken(t *testing.T) {
 	info := storedInfo(t, kr, "vbr")
 	if info.Token != token || info.RefreshToken == r2 || info.RefreshToken == "" {
 		t.Error("the second rotation was not stored")
+	}
+}
+
+func init() {
+	// Keep the post-rejection recheck short in tests; the delayed-store test
+	// sets its own timing.
+	rejectRecheckTotal = 200 * time.Millisecond
+	rejectRecheckEvery = 10 * time.Millisecond
+}
+
+// The winner's rotated pair is stored only after the loser's 401 has come back.
+// The loser must not delete the item: it waits, adopts the winner's session and
+// leaves it in place.
+func TestGetToken_ConcurrentRefreshWinnerStoresAfterRejection(t *testing.T) {
+	t.Setenv(TokenEnvVar, "")
+	rejectRecheckTotal, rejectRecheckEvery = 2*time.Second, 10*time.Millisecond
+	t.Cleanup(func() { rejectRecheckTotal, rejectRecheckEvery = 200*time.Millisecond, 10*time.Millisecond })
+
+	m := newMockVBR(t)
+	kr := newMockKeyring()
+	tm := newTestTokenManager(kr)
+	r1 := m.newRefreshToken()
+	seedInfo(t, kr, "vbr", expiredSession(m, r1))
+
+	m.mu.Lock()
+	access, r2 := m.issue()
+	m.mu.Unlock()
+	rejected := make(chan struct{})
+	stored := make(chan struct{})
+	m.beforeRefresh = func() {
+		m.mu.Lock()
+		delete(m.validRefresh, r1) // the winner spent it
+		m.mu.Unlock()
+		// The winner writes its pair only once the loser has seen the 401.
+		go func() {
+			<-rejected
+			time.Sleep(100 * time.Millisecond)
+			info := expiredSession(m, r2)
+			info.Token, info.ExpiresAt = access, time.Now().Add(10*time.Minute)
+			data, _ := json.Marshal(info)
+			_ = kr.Set(keyring.Item{Key: "vbr", Data: data})
+			close(stored)
+		}()
+	}
+
+	go func() {
+		// Signal once the loser's refresh has been rejected (its call is recorded).
+		for {
+			if _, rf := m.calls(); rf >= 1 {
+				time.Sleep(20 * time.Millisecond)
+				close(rejected)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
+	token, err := tm.GetToken("vbr", m.profile, "", "", testHost, true)
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	<-stored
+	info := storedInfo(t, kr, "vbr")
+	if token != access || info.Token != access || info.RefreshToken != r2 {
+		t.Error("the winner's session was not adopted and kept")
+	}
+	if _, rf := m.calls(); rf != 1 {
+		t.Errorf("refresh calls = %d, want 1", rf)
+	}
+}
+
+// With the lock held by another process, a refresh waits for it and then uses
+// the session that process stored instead of refreshing again.
+func TestGetToken_RefreshWaitsForLockThenUsesRotatedItem(t *testing.T) {
+	t.Setenv(TokenEnvVar, "")
+	m := newMockVBR(t)
+	kr := newMockKeyring()
+	tm := newTestTokenManager(kr)
+	r1 := m.newRefreshToken()
+	seedInfo(t, kr, "vbr", expiredSession(m, r1))
+	m.mu.Lock()
+	access, r2 := m.issue()
+	m.mu.Unlock()
+
+	release := tm.lockRefresh("vbr") // "the other process" holds the lock
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		info := expiredSession(m, r2)
+		info.Token, info.ExpiresAt = access, time.Now().Add(10*time.Minute)
+		data, _ := json.Marshal(info)
+		_ = kr.Set(keyring.Item{Key: "vbr", Data: data})
+		release()
+	}()
+
+	token, err := tm.GetToken("vbr", m.profile, "", "", testHost, true)
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if token != access {
+		t.Error("the session stored by the lock holder was not used")
+	}
+	if _, rf := m.calls(); rf != 0 {
+		t.Errorf("refresh calls = %d, want 0", rf)
+	}
+}
+
+// A rejected refresh whose stored item never changes ends with the item removed
+// (the conditional delete still fires when nothing newer appeared).
+func TestGetToken_RejectedUnchangedItemIsRemoved(t *testing.T) {
+	t.Setenv(TokenEnvVar, "")
+	m := newMockVBR(t)
+	kr := newMockKeyring()
+	tm := newTestTokenManager(kr)
+	seedInfo(t, kr, "vbr", expiredSession(m, fakeJWT(time.Now().Add(time.Hour), 999))) // never issued: rejected
+	if _, err := tm.GetToken("vbr", m.profile, "", "", testHost, true); err == nil {
+		t.Fatal("expected an error")
+	}
+	if _, ok := kr.store["vbr"]; ok {
+		t.Error("an unchanged rejected item should be removed")
 	}
 }
 

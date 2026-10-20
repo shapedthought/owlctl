@@ -144,24 +144,11 @@ func (tm *TokenManager) resolveSession(kcKey string, profile models.Profile, use
 
 		// 3. Stored refresh token (not for Enterprise Manager sessions)
 		if profile.AuthType != "basic" && apiURL != "" && info.usableRefresh(now) {
-			if tm.debug {
-				fmt.Fprintln(os.Stderr, "DEBUG: Refreshing access token with stored refresh token")
-			}
-			res, err := NewAuthenticator(insecure, tm.debug).Refresh(profile, info.RefreshToken, apiURL)
+			tok, exp, err := tm.refreshLocked(kcKey, profile, info, rejected, apiURL, insecure)
 			if err == nil {
-				// Refresh tokens are single-use: persist the new pair straight away.
-				exp := tm.storeSession(kcKey, res, apiURL, profile.Port)
-				return res.Token, exp, nil
+				return tok, exp, nil
 			}
 			refreshErr = err
-			if errors.Is(err, ErrRefreshRejected) {
-				// Refresh tokens are single-use, so another owlctl process may
-				// have rotated the pair first. Use what it stored; only discard
-				// when the stored item is still the one that was rejected.
-				if tok, exp, ok := tm.adoptRotated(kcKey, profile, info, rejected, apiURL, insecure); ok {
-					return tok, exp, nil
-				}
-			}
 			if tm.debug {
 				fmt.Fprintf(os.Stderr, "DEBUG: Token refresh failed: %v\n", err)
 			}
@@ -193,41 +180,81 @@ func (tm *TokenManager) resolveSession(kcKey string, profile models.Profile, use
 	return "", time.Time{}, errNoSession
 }
 
-// adoptRotated handles a rejected refresh token. It re-reads the stored item:
-// if another process replaced it (different refresh or access token), that
-// item is used (its access token if it has more than 60s left, else one more
-// refresh with its new refresh token) and is not deleted. If the stored item
-// is still the rejected one it is discarded. ok is false when no token was
-// obtained.
-func (tm *TokenManager) adoptRotated(kcKey string, profile models.Profile, tried *TokenInfo, rejected, apiURL string, insecure bool) (string, time.Time, bool) {
-	cur := tm.loadInfo(kcKey, apiURL, profile.Port)
-	if cur == nil || (cur.RefreshToken == tried.RefreshToken && cur.Token == tried.Token) {
-		tm.discard(kcKey) // still the rejected session (or already gone)
-		return "", time.Time{}, false
-	}
-	if tm.debug {
-		fmt.Fprintln(os.Stderr, "DEBUG: Stored session was replaced by another process; using it")
-	}
+// Recheck window after a rejected refresh: the process that rotated the pair
+// may not have stored it yet, so the item is polled before the session is
+// declared dead. Vars so tests can shorten them.
+var (
+	rejectRecheckTotal = 1500 * time.Millisecond
+	rejectRecheckEvery = 150 * time.Millisecond
+)
 
-	now := time.Now()
-	if cur.Token != "" && cur.Token != rejected && cur.ExpiresAt.Sub(now) > accessTokenSkew {
-		return cur.Token, cur.ExpiresAt, true
+// sessionChanged reports whether a is a different stored session than b.
+func sessionChanged(a, b *TokenInfo) bool {
+	return a.RefreshToken != b.RefreshToken || a.Token != b.Token
+}
+
+// refreshLocked renews the session with the stored refresh token. Refresh is
+// serialised across processes with a lock file; after taking it the item is
+// re-read and, if another process already rotated it, that session is used
+// without refreshing. A rejected refresh is rechecked for a short while before
+// the stored item is deleted, and the delete only happens if the item is still
+// exactly the rejected one.
+func (tm *TokenManager) refreshLocked(kcKey string, profile models.Profile, info *TokenInfo, rejected, apiURL string, insecure bool) (string, time.Time, error) {
+	release := tm.lockRefresh(kcKey)
+	defer release()
+
+	cur := info
+	if latest := tm.loadInfo(kcKey, apiURL, profile.Port); latest != nil && sessionChanged(latest, info) {
+		cur = latest
 	}
-	if cur.RefreshToken != tried.RefreshToken && cur.usableRefresh(now) {
+	deadline := time.Now().Add(rejectRecheckTotal)
+	for {
+		now := time.Now()
+		if sessionChanged(cur, info) {
+			if tm.debug {
+				fmt.Fprintln(os.Stderr, "DEBUG: Stored session was replaced by another process; using it")
+			}
+			if cur.Token != "" && cur.Token != rejected && cur.ExpiresAt.Sub(now) > accessTokenSkew {
+				return cur.Token, cur.ExpiresAt, nil
+			}
+		}
+		if !cur.usableRefresh(now) {
+			return "", time.Time{}, ErrRefreshRejected
+		}
+		if tm.debug {
+			fmt.Fprintln(os.Stderr, "DEBUG: Refreshing access token with stored refresh token")
+		}
 		res, err := NewAuthenticator(insecure, tm.debug).Refresh(profile, cur.RefreshToken, apiURL)
 		if err == nil {
-			return res.Token, tm.storeSession(kcKey, res, apiURL, profile.Port), true
+			// Refresh tokens are single-use: persist the new pair straight away.
+			return res.Token, tm.storeSession(kcKey, res, apiURL, profile.Port), nil
 		}
 		if !errors.Is(err, ErrRefreshRejected) {
-			return "", time.Time{}, false
+			return "", time.Time{}, err
 		}
+
+		// Rejected: another process may have rotated the pair but not stored it
+		// yet. Wait for a different item to appear.
+		var next *TokenInfo
+		for {
+			if latest := tm.loadInfo(kcKey, apiURL, profile.Port); latest != nil && sessionChanged(latest, cur) {
+				next = latest
+				break
+			}
+			if !time.Now().Before(deadline) {
+				break
+			}
+			time.Sleep(rejectRecheckEvery)
+		}
+		if next == nil {
+			// Delete only if the item is still exactly the rejected one.
+			if latest, rerr := tm.readStored(kcKey); rerr != nil || !sessionChanged(latest, cur) {
+				tm.discard(kcKey)
+			}
+			return "", time.Time{}, err
+		}
+		cur = next
 	}
-	// Nothing usable in the replacement: discard it only if no newer item has
-	// appeared since it was read.
-	if latest := tm.loadInfo(kcKey, apiURL, profile.Port); latest == nil || (latest.RefreshToken == cur.RefreshToken && latest.Token == cur.Token) {
-		tm.discard(kcKey)
-	}
-	return "", time.Time{}, false
 }
 
 // StoreToken stores an access token with no refresh token or server binding.

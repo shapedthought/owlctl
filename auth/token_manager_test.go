@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 // mockKeyring implements keyring.Keyring for testing without touching the system keychain.
 type mockKeyring struct {
+	mu       sync.Mutex // guards store for tests that write from another goroutine
 	store    map[string]keyring.Item
 	errOnSet bool
 	errOnGet bool
@@ -25,6 +27,8 @@ func (m *mockKeyring) Get(key string) (keyring.Item, error) {
 	if m.errOnGet {
 		return keyring.Item{}, errors.New("keyring unavailable")
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	item, ok := m.store[key]
 	if !ok {
 		return keyring.Item{}, keyring.ErrKeyNotFound
@@ -40,16 +44,22 @@ func (m *mockKeyring) Set(item keyring.Item) error {
 	if m.errOnSet {
 		return errors.New("keyring write failed")
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.store[item.Key] = item
 	return nil
 }
 
 func (m *mockKeyring) Remove(key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.store, key)
 	return nil
 }
 
 func (m *mockKeyring) Keys() ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	keys := make([]string, 0, len(m.store))
 	for k := range m.store {
 		keys = append(keys, k)
