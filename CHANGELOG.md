@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-21
+
+> **Upgrading:** run `owlctl login` once after upgrading (stored tokens are now bound to the server). On macOS, a new or rebuilt owlctl binary needs one **Always Allow** on the Keychain prompt before it can read the stored session without asking.
+
 ### Added
 
 - `owlctl license install --file <path.lic>`: strips a leading UTF-8 BOM, base64-encodes the file and POSTs `{"license": "<base64>"}` to `license/install`. `--dry-run` validates the file and prints size, BOM found and base64 length without calling VBR or printing licence content. The body matches VBR's `LicenseInstallationSpec` (required `license`, base64 string) (#210).
@@ -21,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Release builds: the macOS (darwin amd64/arm64) binaries are now built with cgo on a macOS runner, so they can use the macOS Keychain. Linux and Windows builds and asset names are unchanged (#217).
 - `owlctl login` no longer writes `headers.json`, and `job create` authenticates through the same token resolution as every other command instead of reading `headers.json`. `--output-token` still prints only the access token and now opens no keyring (#214).
 - `docs/authentication.md` documents the token lifecycle (access, refresh, password fallback, logout) and server binding, and no longer claims the keychain token is "automatically refreshed" without saying how (#214).
 - On macOS, tokens are stored in the user's login keychain with owlctl as a trusted application, instead of a separate auto-locking `owlctl.keychain` (#214).
