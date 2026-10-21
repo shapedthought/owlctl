@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -53,18 +54,63 @@ func SettingPath() string {
 	return paths.ConfigDir() + string(filepath.Separator)
 }
 
+// MissingConfigError is returned by readConfigFile when settings.json or
+// profiles.json does not exist in the config directory.
+type MissingConfigError struct {
+	File string // file name, e.g. "settings.json"
+	Path string // absolute path that was checked
+	// EnvPath is the value of OWLCTL_SETTINGS_PATH ("" when unset).
+	EnvPath string
+}
+
+func (e *MissingConfigError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "no owlctl %s found at %s\n", e.File, e.Path)
+	if e.EnvPath != "" {
+		fmt.Fprintf(&b, "OWLCTL_SETTINGS_PATH is set to %q, but %s is not there.\n", e.EnvPath, e.File)
+		b.WriteString("Run 'owlctl init' (add --insecure for a self-signed VBR certificate) with OWLCTL_SETTINGS_PATH set to that directory,\n")
+		b.WriteString("or point OWLCTL_SETTINGS_PATH at the directory where you ran 'owlctl init'.")
+	} else {
+		b.WriteString("OWLCTL_SETTINGS_PATH is not set, so the current directory is used.\n")
+		b.WriteString("Run 'owlctl init' (add --insecure for a self-signed VBR certificate) in this directory,\n")
+		b.WriteString("or set OWLCTL_SETTINGS_PATH to the directory where you ran it (e.g. export OWLCTL_SETTINGS_PATH=\"$HOME/.owlctl/\").")
+	}
+	return b.String()
+}
+
+// readConfigFile reads name from the config directory. A missing file is
+// returned as *MissingConfigError; other errors are returned unchanged.
+func readConfigFile(name string) ([]byte, error) {
+	b, err := os.ReadFile(SettingPath() + name)
+	if err == nil {
+		return b, nil
+	}
+	if os.IsNotExist(err) {
+		p := filepath.Join(paths.ConfigDir(), name)
+		if abs, absErr := filepath.Abs(p); absErr == nil {
+			p = abs
+		}
+		return nil, &MissingConfigError{File: name, Path: p, EnvPath: os.Getenv("OWLCTL_SETTINGS_PATH")}
+	}
+	return nil, err
+}
+
+// exitIfMissingConfig prints a missing-config error to stderr and exits 1.
+// Other errors are left for the caller.
+func exitIfMissingConfig(err error) {
+	var me *MissingConfigError
+	if errors.As(err, &me) {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", me.Error())
+		os.Exit(1)
+	}
+}
+
 // ReadProfilesFile reads the profiles.json file (new v1.0 format)
 func ReadProfilesFile() models.ProfilesFile {
 	var profilesFile models.ProfilesFile
 
-	settingsPath := SettingPath()
-	profileFile := settingsPath + "profiles.json"
-
-	j, err := os.Open(profileFile)
-	IsErr(err)
-	defer j.Close()
-
-	b, err := io.ReadAll(j)
+	b, err := readConfigFile("profiles.json")
+	exitIfMissingConfig(err)
 	IsErr(err)
 
 	err = json.Unmarshal(b, &profilesFile)
@@ -168,15 +214,8 @@ func ReadSettings() models.Settings {
 
 	var settings models.Settings
 
-	// get the settings path if there
-	settingsPath := SettingPath()
-
-	settingsFile := settingsPath + "settings.json"
-
-	j, err := os.Open(settingsFile)
-	IsErr(err)
-
-	b, err := io.ReadAll(j)
+	b, err := readConfigFile("settings.json")
+	exitIfMissingConfig(err)
 	IsErr(err)
 
 	err = json.Unmarshal(b, &settings)
