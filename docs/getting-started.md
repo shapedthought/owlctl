@@ -95,7 +95,6 @@ This creates:
 |------|-----------|---------|
 | `settings.json` | `owlctl init` | Active profile, TLS setting, default instance |
 | `profiles.json` | `owlctl init` | Per-product API metadata (ports, endpoints, headers) |
-| `headers.json` | `owlctl login` | Auth token for the current session |
 | `owlctl.yaml` | `owlctl instance add` | Named instance and group definitions |
 | `state.json` | first `snapshot` or `apply` | Drift detection baseline for managed resources |
 

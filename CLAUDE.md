@@ -61,7 +61,13 @@ owlctl reads credentials from environment variables:
 The login process:
 1. Reads profile and settings from JSON files
 2. Authenticates using OAuth or Basic Auth (Enterprise Manager)
-3. Saves token to `headers.json` for subsequent requests
+3. Stores the session (access + refresh token, bound to the server URL and port) in the keyring chosen by `OWLCTL_KEYRING`; `headers.json` is no longer written
+
+Token resolution (`auth/token_manager.go`): `OWLCTL_TOKEN` → stored access token (>60s left) → stored refresh token (`grant_type=refresh_token`, single-use, new pair stored immediately) → password login from env → error telling the user to run `owlctl login`. A 401 renews once and retries once (`vhttp/authrequest.go`). `owlctl logout` calls `/api/oauth2/logout` and deletes the stored item. Enterprise Manager has no refresh token.
+
+If a refresh is rejected, `resolveSession` re-reads the stored item: when another process rotated it meanwhile, that item is used (or refreshed once more) and kept; only an unchanged rejected item is discarded.
+
+**Test-only hook:** `OWLCTL_TEST_EXPIRE_ACCESS_TOKEN=1` makes the stored access token count as expired so the refresh path runs without waiting 15 minutes. It does not affect `OWLCTL_TOKEN`, prints nothing, and is deliberately undocumented in `docs/`.
 
 ### Profile System
 
@@ -390,7 +396,7 @@ groups:
 owlctl uses `OWLCTL_SETTINGS_PATH` environment variable to locate configuration files:
 - If not set, files are created/read from the current directory
 - Path normalization handled in `utils.SettingPath()` (adds trailing slash/backslash)
-- Required files: `settings.json`, `profiles.json`, `headers.json` (created after login)
+- Required files: `settings.json`, `profiles.json` (tokens live in the keyring, not in a file)
 
 ## Common Development Commands
 

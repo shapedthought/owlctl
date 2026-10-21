@@ -61,8 +61,8 @@ func TestChooseKeyring(t *testing.T) {
 		wantErr string
 	}{
 		{"none explicit, interactive", keyringEnv{setting: "none", interactive: true, goos: "darwin"}, "none", ""},
-		{"default non-interactive acts as none", keyringEnv{interactive: false, goos: "darwin"}, "none", ""},
-		{"auto non-interactive acts as none", keyringEnv{setting: "auto", interactive: false, goos: "linux", hasDBus: true}, "none", ""},
+		{"default non-interactive uses the keychain", keyringEnv{interactive: false, goos: "darwin"}, "keychain", ""},
+		{"auto non-interactive uses secret-service", keyringEnv{setting: "auto", interactive: false, goos: "linux", hasDBus: true}, "secret-service", ""},
 		{"auto darwin interactive", keyringEnv{interactive: true, goos: "darwin"}, "keychain", ""},
 		{"auto windows interactive", keyringEnv{interactive: true, goos: "windows"}, "wincred", ""},
 		{"auto linux with dbus", keyringEnv{interactive: true, goos: "linux", hasDBus: true}, "secret-service", ""},
@@ -123,15 +123,49 @@ func TestNewTokenManager_NoneNeverOpensKeyring(t *testing.T) {
 	}
 }
 
-func TestNewTokenManager_NonInteractiveDefaultIsNone(t *testing.T) {
-	t.Setenv(KeyringEnvVar, "")
-	t.Setenv("CI", "1")
-	tm, err := NewTokenManager(false)
-	if err != nil {
-		t.Fatalf("NewTokenManager: %v", err)
+// The auto backend must be identical with and without a terminal (or in CI):
+// login, refresh and reads all rely on it.
+func TestChooseKeyring_AutoIndependentOfTerminal(t *testing.T) {
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		for _, dbus := range []bool{false, true} {
+			for _, setting := range []string{"", "auto"} {
+				var names []string
+				for _, tty := range []bool{true, false} {
+					env := keyringEnv{setting: setting, goos: goos, hasDBus: dbus, interactive: tty, stdinTTY: tty}
+					got, err := chooseKeyring(env)
+					if err != nil {
+						t.Fatalf("%s dbus=%v tty=%v: %v", goos, dbus, tty, err)
+					}
+					if got.backend == "" {
+						t.Errorf("%s dbus=%v tty=%v: auto must pick a backend", goos, dbus, tty)
+					}
+					names = append(names, got.name)
+				}
+				if names[0] != names[1] {
+					t.Errorf("%s dbus=%v setting=%q: backend %q with a terminal, %q without", goos, dbus, setting, names[0], names[1])
+				}
+			}
+		}
 	}
-	if tm.keyring != nil {
-		t.Fatal("CI session must not open a keyring by default")
+}
+
+// Through the real environment: a CI session (never interactive) resolves the
+// same backend as an interactive one.
+func TestCurrentKeyringEnv_CIDoesNotChangeBackend(t *testing.T) {
+	t.Setenv(KeyringEnvVar, "")
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	t.Setenv("CI", "")
+	a, err := chooseKeyring(currentKeyringEnv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CI", "1")
+	b, err := chooseKeyring(currentKeyringEnv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.name != b.name || a.backend == "" {
+		t.Errorf("backend differs with CI set: %q vs %q", a.name, b.name)
 	}
 }
 

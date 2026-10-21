@@ -14,15 +14,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OWLCTL_KEYRING=auto|keychain|secret-service|wincred|file|none` selects the token storage backend. `none` never opens a keyring; `file` without a terminal and without `OWLCTL_FILE_KEY` fails immediately instead of prompting; unknown values are an error (#214).
 - `OWLCTL_KEYRING_TIMEOUT` bounds every keyring read, write and delete. The default is 60s on an interactive terminal (stdin is a TTY, `CI`/`TF_BUILD` unset), so there is time to approve a macOS Keychain dialog, and 5s otherwise (#214, #209).
 
+- VBR refresh tokens: `owlctl login` now stores the refresh token (and its expiry, read from the JWT `exp` claim) alongside the access token. When the 15-minute access token expires, owlctl exchanges the refresh token (`grant_type=refresh_token`) and stores the new pair immediately, since refresh tokens are single-use. `OWLCTL_PASSWORD` is only needed when no stored session can be renewed; otherwise the error tells you to run `owlctl login`. Enterprise Manager is unchanged (#214).
+- A `401` response now triggers one token renewal and one retry of the request, never a loop. `OWLCTL_TOKEN` is not renewed (#214).
+- Stored tokens are bound to the server (`OWLCTL_URL` hostname and port) that issued them and are never used for a different server. Tokens stored by earlier versions carry no binding and are ignored, so run `owlctl login` once after upgrading (#214).
+- `owlctl logout`: calls `POST /api/oauth2/logout` (VBR) and deletes the stored access and refresh token. The stored item is removed even if the server call fails (#214).
+
 ### Changed
 
+- `owlctl login` no longer writes `headers.json`, and `job create` authenticates through the same token resolution as every other command instead of reading `headers.json`. `--output-token` still prints only the access token and now opens no keyring (#214).
+- `docs/authentication.md` documents the token lifecycle (access, refresh, password fallback, logout) and server binding, and no longer claims the keychain token is "automatically refreshed" without saying how (#214).
 - On macOS, tokens are stored in the user's login keychain with owlctl as a trusted application, instead of a separate auto-locking `owlctl.keychain` (#214).
 - In non-interactive sessions (stdin not a terminal, or a CI variable set) the default `OWLCTL_KEYRING=auto` skips every backend that can prompt and authenticates from the environment; set `OWLCTL_KEYRING` explicitly to store tokens there (#214, #209).
 - `docs/authentication.md` documents `OWLCTL_KEYRING`, the timeout, non-interactive behaviour, the macOS login keychain and the real file-keyring paths (one file per key in `~/.owlctl/`) (#214).
 - Bumped the default owlctl install pin to `v1.4.0` in `examples/pipelines/templates/install-owlctl.yml` and `examples/pipelines/lab-verification/lab-verification.yml` (and its README parameter table), following the v1.4.0 release (#200).
 
+### Removed
+
+- The unused `vhttp.ApiLogin` (which would have written the full OAuth response, refresh token included, to `headers.json` with mode 0644) and `utils.ReadHeader` (#214).
+
 ### Fixed
 
+- macOS Keychain: the keyring timeout was 5s whenever stdin was not a terminal, but the Keychain access/unlock dialog is a GUI prompt that `< /dev/null` does not suppress, so `owlctl get jobs < /dev/null` gave up before the dialog could be answered and reported `not logged in`. The Keychain backend now always waits up to 60s (or `OWLCTL_KEYRING_TIMEOUT`); other backends keep the 5s non-interactive default. On timeout the stderr hint now says a Keychain prompt may be waiting and suggests choosing Always Allow, `security unlock-keychain`, or raising `OWLCTL_KEYRING_TIMEOUT`. The docs explain that an ad-hoc rebuilt binary needs one Always Allow per build (#214).
+- `owlctl login` no longer prints a plain `Login OK` when the token could not be stored (for example the file keyring without `OWLCTL_FILE_KEY`). It prints `Login OK (token not stored: <reason>)`, with the instance variant, and the stderr warning names the fix: set `OWLCTL_FILE_KEY`, or `OWLCTL_KEYRING=none` to skip storage (#214).
+- On macOS (cgo builds), `owlctl login` stored the session in the login Keychain but commands run without a terminal (`< /dev/null`, scripts) did not read it, because the default `OWLCTL_KEYRING=auto` acted as `none` there. `auto` now picks the same backend with or without a terminal or CI variables; only the keyring timeout differs. This supersedes the earlier "non-interactive sessions skip every backend" entry; use `OWLCTL_KEYRING=none` to skip the keyring (#214).
+- `owlctl logout` now also removes the refresh lock file, and a rejected refresh no longer deletes the stored session when the keyring read failed (only when the item was read and is still the rejected one) (#214).
+- Two owlctl processes refreshing the same stored session no longer log the user out: when a refresh is rejected, owlctl re-reads the stored item and uses the session another process just stored instead of deleting it (#214).
+- Token refresh is now serialised across owlctl processes with an advisory lock file (`~/.owlctl/<key>.lock`, bounded wait), and a rejected refresh is rechecked for about 1.5s and only deletes the stored session if it is still exactly the rejected one, so a winner that stores its rotated pair late is no longer deleted (#214).
 - owlctl no longer hangs when the keychain or file keyring wants to prompt in a script, CI job, ssh session or `< /dev/null`: a blocked keyring times out with a one-line stderr hint and owlctl falls back to the environment credentials (#209, #214).
 - Payload files passed with `-f` to `post`/`put` that start with a UTF-8 BOM are no longer rejected by the JSON/YAML parser (#210).
 - `owlctl post` and `owlctl put` now print the response body on success instead of discarding it. JSON is pretty-printed, other bodies are printed raw, and an empty body (e.g. 204) prints nothing. The `Status Code:` / `Status:` lines moved to stderr so stdout is pipe-friendly (`owlctl post ... | jq .id`). Non-2xx behaviour is unchanged (#208).

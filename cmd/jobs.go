@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/shapedthought/owlctl/auth"
 	"github.com/shapedthought/owlctl/config"
 	"github.com/shapedthought/owlctl/models"
 	"github.com/shapedthought/owlctl/resources"
@@ -73,7 +74,7 @@ func getTemplates(args []string, folder string) {
 	// save base job file
 	utils.SaveData(&varJobs, fmt.Sprintf("job-template-%s", varJobs.Name))
 
-	// save storage data 
+	// save storage data
 	utils.SaveData(&varJobs.Storage, fmt.Sprintf("storage-%s", varJobs.Name))
 
 	// save guest processing data
@@ -97,7 +98,7 @@ func getTemplates(args []string, folder string) {
 
 	jobName := fmt.Sprintf("job-%s", varJobs.Name)
 	// save job data
-	utils.SaveData(&saveJob, jobName) 
+	utils.SaveData(&saveJob, jobName)
 
 	fmt.Println("Job templates created.")
 
@@ -107,7 +108,7 @@ func getSettingsPath(cp string) string {
 	settingsPath := os.Getenv("OWLCTL_SETTINGS_PATH")
 
 	var sf string
-	
+
 	if len(cp) > 0 {
 		sf = cp
 	} else {
@@ -135,7 +136,6 @@ func getSettingsPath(cp string) string {
 	return settingsPath
 }
 
-
 func createJob(args []string, folder string, customTemplate string) {
 	settings := utils.ReadSettings()
 	profile := utils.GetCurrentProfile()
@@ -161,7 +161,7 @@ func createJob(args []string, folder string, customTemplate string) {
 
 	api_url := utils.GetAddress(profile, settings)
 
-	if len(folder) > 0  {
+	if len(folder) > 0 {
 
 		// get all files in folder
 		fmt.Println("Reading folder: ", folder)
@@ -174,7 +174,7 @@ func createJob(args []string, folder string, customTemplate string) {
 			log.Fatal("No files found in folder")
 		}
 
-		var vbrJob models.VbrJob 
+		var vbrJob models.VbrJob
 
 		for _, file := range files {
 			fp := fmt.Sprintf("%s%s", folder, file.Name())
@@ -195,7 +195,7 @@ func createJob(args []string, folder string, customTemplate string) {
 				templateFile.Description = vbrJob.Description
 				templateFile.VirtualMachines = vbrJob.VirtualMachines
 			}
-			
+
 			if strings.Contains(fp, "storage") {
 				fmt.Println("Storage file found: ", file.Name())
 				var vbrStorage models.Storage
@@ -212,8 +212,8 @@ func createJob(args []string, folder string, customTemplate string) {
 				utils.IsErr(err)
 
 				templateFile.Storage = vbrStorage
-			} 
-			
+			}
+
 			if strings.Contains(fp, "guest-processing") {
 				fmt.Println("Guest processing file found: ", file.Name())
 				var vbrGuestProcessing models.GuestProcessing
@@ -230,8 +230,8 @@ func createJob(args []string, folder string, customTemplate string) {
 				utils.IsErr(err)
 
 				templateFile.GuestProcessing = vbrGuestProcessing
-			} 
-			
+			}
+
 			if strings.Contains(fp, "schedule") {
 				fmt.Println("Schedule file found: ", file.Name())
 				var vbrSchedule models.Schedule
@@ -252,10 +252,10 @@ func createJob(args []string, folder string, customTemplate string) {
 		}
 	} else if len(args) > 1 {
 
-		var vbrJob models.VbrJob 
+		var vbrJob models.VbrJob
 
 		getYaml, err := os.Open(args[1])
-		
+
 		utils.IsErr(err)
 
 		b, err := io.ReadAll(getYaml)
@@ -283,11 +283,14 @@ func createJob(args []string, folder string, customTemplate string) {
 	r, err := http.NewRequest("POST", connstring, bytes.NewReader(sendData))
 
 	utils.IsErr(err)
-	headers := utils.ReadHeader[models.SendHeader]()
+	token, err := auth.GetTokenForRequest(settings.SelectedProfile, profile, settings)
+	if err != nil {
+		log.Fatalf("Authentication failed: %v", err)
+	}
 	r.Header.Add("x-api-version", profile.Headers.XAPIVersion)
 	r.Header.Add("Content-Type", "application/json")
 
-	r.Header.Add("Authorization", "Bearer "+headers.AccessToken)
+	r.Header.Add("Authorization", "Bearer "+token)
 
 	client := vhttp.Client(settings.ApiNotSecure)
 	res, err := client.Do(r)

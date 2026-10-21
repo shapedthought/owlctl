@@ -186,7 +186,7 @@ Default API versions owlctl ships with (override per profile in `profiles.json`)
 
 ## Credentials and Token Storage
 
-Credentials always come from environment variables. Tokens are stored securely in the system keychain.
+Credentials always come from environment variables. Tokens (never the password) are stored securely in the system keychain.
 
 ### Setting Credentials
 
@@ -213,7 +213,7 @@ $env:OWLCTL_SETTINGS_PATH = "$HOME\.owlctl\"  # Optional
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OWLCTL_USERNAME` | Yes* | API username (may need `DOMAIN\user` format) |
-| `OWLCTL_PASSWORD` | Yes* | API password |
+| `OWLCTL_PASSWORD` | Yes* | API password. Only used to log in; once `owlctl login` has stored a session it is not needed until the refresh token expires |
 | `OWLCTL_URL` | Yes* | Server hostname/IP (without `https://` or port) |
 | `OWLCTL_TOKEN` | No | Explicit authentication token (bypasses auto-auth) |
 | `OWLCTL_SETTINGS_PATH` | No | Config file directory (default: current directory) |
@@ -239,25 +239,56 @@ owlctl attempts authentication in this order:
    ./owlctl get jobs
    ```
 
-2. **System keychain** (interactive sessions only)
+2. **Stored access token** (when a keyring is active)
    - **macOS:** Keychain Access
    - **Windows:** Credential Manager
    - **Linux:** Secret Service (GNOME Keyring, KWallet)
-   - Token stored encrypted by OS
-   - Persists across owlctl sessions
+   - Token stored encrypted by OS; used only if it has more than 60 seconds left and was issued by the server you are talking to
    ```bash
-   ./owlctl login  # Token stored in keychain
+   ./owlctl login  # Session stored in keychain
    ./owlctl get jobs  # Uses token from keychain
    ```
 
-3. **Auto-authenticate** (CI/CD and non-TTY environments)
-   - Detects non-interactive sessions automatically
-   - Authenticates on-demand using `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL`
+3. **Stored refresh token** (VBR and other OAuth products)
+   - When the access token has expired, owlctl exchanges the stored refresh token for a new pair (`grant_type=refresh_token`) and stores it immediately
+   - `OWLCTL_PASSWORD` is **not** needed for this step
+
+4. **Auto-authenticate** with `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL`
+   - Used when nothing is stored (CI/CD and non-TTY environments, `OWLCTL_KEYRING=none`) or the refresh token has expired or been rejected
    - No keychain interaction on headless systems (see `OWLCTL_KEYRING` below)
    ```bash
    # GitHub Actions, GitLab CI, Jenkins, etc.
    ./owlctl get jobs  # Auto-authenticates using env vars
    ```
+
+5. **Error** telling you to run `owlctl login` (or set `OWLCTL_TOKEN`, or the credentials)
+
+#### Token Lifecycle
+
+For VBR, `owlctl login` stores a **session**: the 15-minute access token and the refresh token VBR returns with it. The password is never stored, in the keyring, a file or `state.json`.
+
+| Stage | What happens |
+|-------|--------------|
+| `owlctl login` | Password login; access token, refresh token, the refresh token's expiry (read from its JWT `exp` claim, for scheduling only) and the server it came from are stored. |
+| Any command, access token valid (more than 60s left) | The stored access token is used. No server call to the token endpoint. |
+| Access token expired | The refresh token is sent once. VBR refresh tokens are **single-use**, so the new access and refresh token replace the stored pair straight away; the next renewal uses the new refresh token. |
+| Request answered `401` | The token is renewed once (refresh token, then password) and the request is retried once. A second `401` is reported, never retried. |
+| Refresh token expired or rejected | The stored session is removed. If `OWLCTL_USERNAME`/`OWLCTL_PASSWORD` are set owlctl logs in with them; otherwise it fails with a message telling you to run `owlctl login`. |
+| `owlctl logout` | Calls `POST /api/oauth2/logout` (VBR; this also invalidates the refresh token), then deletes the stored item. The stored item is removed even if the server call fails. |
+
+So after one `owlctl login`, commands keep working past 15 minutes with `OWLCTL_PASSWORD` unset, until the refresh token expires (its lifetime is set by VBR). If two owlctl processes renew at the same moment, one of them may find the refresh token already used and fall back to the password (or ask you to log in again).
+
+Enterprise Manager sessions have no refresh token and behave as before: the session is stored and re-created with the password when it expires.
+
+With `OWLCTL_KEYRING=none` nothing is stored between processes, but within one process a `401` is still renewed through the refresh token.
+
+**Server binding.** Each stored item records the server hostname (`OWLCTL_URL`) and port it was issued by, and is never used for a different one. Items stored by older versions (which recorded no server) are ignored once, so run `owlctl login` again after upgrading. Named instances keep separate items (`instance:<name>`).
+
+**`OWLCTL_TOKEN` is never renewed.** If the server rejects it with `401`, owlctl reports the error; capture a new one with `owlctl login --output-token`.
+
+**What is never printed.** Access and refresh tokens do not appear in any output, including `--debug-auth`, which shows only the backend name and expiry times. `--output-token` prints only the access token.
+
+**`headers.json` is gone.** `owlctl login` no longer writes `headers.json`, and `job create` now uses the same token resolution as every other command. You can delete any old `headers.json`.
 
 #### Choosing the Storage Backend (`OWLCTL_KEYRING`)
 
@@ -265,24 +296,28 @@ owlctl attempts authentication in this order:
 
 | Value | Behaviour |
 |-------|-----------|
-| `auto` (default) | Interactive terminal: macOS login keychain, Windows Credential Manager, Linux Secret Service (when `DBUS_SESSION_BUS_ADDRESS` is set) or the file keyring otherwise. **Non-interactive** (stdin is not a terminal, or a CI variable such as `CI` is set): behaves as `none`. |
+| `auto` (default) | macOS login keychain, Windows Credential Manager, Linux Secret Service (when `DBUS_SESSION_BUS_ADDRESS` is set) or the file keyring otherwise. The choice is the same with or without a terminal, so `login`, token renewal and every other command always use the same backend; only the timeout differs. |
 | `keychain` | macOS Keychain. Only available in builds with cgo (see below). |
 | `secret-service` | Linux Secret Service (GNOME Keyring, KWallet). |
 | `wincred` | Windows Credential Manager. |
 | `file` | Encrypted file keyring in `~/.owlctl`. Needs `OWLCTL_FILE_KEY` or a terminal; with neither, owlctl exits with an error instead of prompting. |
 | `none` | Never opens a keyring or stores a token. Every process authenticates from `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL` (or uses `OWLCTL_TOKEN`). |
 
-An unknown value is an error. Naming a backend explicitly overrides the non-interactive rule, so `OWLCTL_KEYRING=file` plus `OWLCTL_FILE_KEY` stores tokens in CI.
+An unknown value is an error. In CI, set `OWLCTL_KEYRING=file` plus `OWLCTL_FILE_KEY` to store tokens, or `OWLCTL_KEYRING=none` to store nothing.
 
 #### Non-Interactive Sessions and Timeouts
 
 Keychain unlock dialogs and file-keyring passphrase prompts cannot be answered from scripts, CI, ssh sessions, IDE tasks or `< /dev/null`, and used to make owlctl hang. Now:
 
-- With the default `auto`, any non-interactive session skips every backend that could prompt and authenticates from the environment.
+- With the default `auto`, the backend is the same in interactive and non-interactive sessions; a backend that cannot respond (a locked keychain, a file keyring with no `OWLCTL_FILE_KEY`) fails or times out and owlctl authenticates from the environment instead. Use `OWLCTL_KEYRING=none` to skip the keyring entirely.
 - Every keyring read, write and delete has a timeout (default 60 seconds when stdin is an interactive terminal and `CI`/`TF_BUILD` are not set, 5 seconds otherwise; set `OWLCTL_KEYRING_TIMEOUT` to a Go duration such as `15s` or a number of seconds). On timeout owlctl prints one line to stderr naming `OWLCTL_TOKEN` and `OWLCTL_KEYRING=none`, stops using the keyring for the rest of the process, and falls back to the environment credentials.
 - The 60 second interactive default leaves time to approve a macOS Keychain dialog; raise `OWLCTL_KEYRING_TIMEOUT` if you need longer. The file keyring is exempt, since it waits for your passphrase.
 
 #### macOS Keychain
+
+**Rebuilt binaries and "Always Allow".** The Keychain decides whether to prompt by the binary's code signature. A binary you build yourself with `go build` is ad-hoc signed, so every rebuild is a new binary the existing item does not trust: its first read, write or delete prompts, and you need to choose **Always Allow** once per build. Choosing only "Allow" prompts again on the next operation, which is why you may see several prompts in a row. Release binaries keep one signature, so this mainly affects local builds. Resetting the item (`owlctl logout`, then `owlctl login`) also needs one approval if the old item was created by a different build.
+
+The prompt is a GUI dialog: redirecting stdin (`< /dev/null`) does not suppress it. For that reason the Keychain backend waits up to 60 seconds for an answer even without a terminal (`OWLCTL_KEYRING_TIMEOUT` overrides it). If it still times out, owlctl says a Keychain prompt may be waiting; answer it, run `security unlock-keychain` if the login keychain is locked, or use `OWLCTL_KEYRING=none` in scripts that cannot show a dialog.
 
 On macOS, tokens go in your **login** keychain (not a separate `owlctl.keychain`), and owlctl is marked as a trusted application on the item, so reads should not raise a confirmation dialog each time.
 
@@ -338,6 +373,11 @@ export OWLCTL_URL="vbr.local"
     ./owlctl profile --set vbr
     ./owlctl job diff --all --security-only
     # Auto-authenticates, no keychain interaction
+```
+
+**Ending a session:**
+```bash
+./owlctl logout  # revokes the session on VBR and deletes the stored access and refresh token
 ```
 
 **Explicit Token Control:**
@@ -560,12 +600,12 @@ export OWLCTL_SETTINGS_PATH="$HOME/.owlctl/"
 
 **Problem:** API calls failing with authentication errors after working previously.
 
-**Solution:** Re-login to refresh the token in keychain:
+**Solution:** For VBR, owlctl renews the 15-minute access token itself from the stored refresh token (see [Token Lifecycle](#token-lifecycle)). If that fails, the refresh token has expired or was rejected; log in again:
 ```bash
 ./owlctl login
 ```
 
-The keychain token is automatically refreshed.
+Without a stored session (for example `OWLCTL_KEYRING=none`), set `OWLCTL_USERNAME`/`OWLCTL_PASSWORD`/`OWLCTL_URL` so owlctl can log in on each run.
 
 ### Token Storage Issues
 

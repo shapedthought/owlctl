@@ -34,8 +34,11 @@ export OWLCTL_USERNAME="administrator"
 export OWLCTL_PASSWORD="your-password"
 export OWLCTL_URL="vbr.example.com"
 
-# Login
+# Login (stores a session: access + refresh token, renewed automatically)
 owlctl login
+
+# Logout (revokes the session on VBR and deletes the stored tokens)
+owlctl logout
 ```
 
 ---
