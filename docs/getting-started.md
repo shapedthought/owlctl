@@ -56,7 +56,8 @@ Create the configuration files non-interactively:
 # Basic init (creates files with defaults)
 ./owlctl init
 
-# With specific directory
+# With specific directory (also export OWLCTL_SETTINGS_PATH="$HOME/.owlctl/"
+# so later commands find the files)
 ./owlctl init --output-dir ~/.owlctl/
 
 # With flags for specific settings

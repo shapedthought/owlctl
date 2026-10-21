@@ -23,7 +23,8 @@ Run the init command to create configuration files:
 # Non-interactive init (default)
 ./owlctl init
 
-# With specific settings
+# With specific settings (later commands also need
+# OWLCTL_SETTINGS_PATH="$HOME/.owlctl/" to find these files)
 ./owlctl init --insecure --output-dir ~/.owlctl/
 
 # Legacy interactive mode
@@ -71,9 +72,10 @@ New-Item -ItemType Directory -Path $HOME\.owlctl -Force
 
 **Example paths:**
 - Windows: `C:\Users\UserName\.owlctl\`
-- macOS/Linux: `/home/username/.owlctl/`
+- macOS: `/Users/<name>/.owlctl/`
+- Linux: `/home/<name>/.owlctl/`
 
-**Note:** The directory must exist before running `init`.
+**Note:** The directory must exist before running `init`. If you run `init` with `--output-dir`, keep `OWLCTL_SETTINGS_PATH` set to the same directory for every later command; otherwise owlctl looks in the current directory and reports that `settings.json` was not found.
 
 ## Profiles
 

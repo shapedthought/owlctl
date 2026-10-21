@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A missing `settings.json` or `profiles.json` (for example `owlctl login` or `profile --set` before `owlctl init`, or from a different directory) now prints a clear error with the absolute path checked and `owlctl init` (with `--insecure` for self-signed certificates) and `OWLCTL_SETTINGS_PATH` guidance, instead of a raw `open ./settings.json: no such file or directory`. Other read errors (permissions, invalid JSON) are reported unchanged (#213).
+
 ## [1.5.0] - 2026-10-21
 
 > **Upgrading:** run `owlctl login` once after upgrading (stored tokens are now bound to the server). On macOS, a new or rebuilt owlctl binary needs one **Always Allow** on the Keychain prompt before it can read the stored session without asking.

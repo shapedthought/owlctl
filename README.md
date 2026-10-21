@@ -70,8 +70,11 @@ shasum -a 256 owlctl  # or: sha256sum owlctl
 ### 2. Initialize and Login
 
 ```bash
-# Create config files
-./owlctl init
+# Create config files (settings.json, profiles.json) in the current directory.
+# Later commands read them from the current directory too, unless
+# OWLCTL_SETTINGS_PATH points elsewhere.
+# Add --insecure for lab servers with self-signed certificates.
+./owlctl init            # or: ./owlctl init --insecure
 
 # Set credentials
 export OWLCTL_USERNAME="administrator"
