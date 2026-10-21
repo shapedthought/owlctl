@@ -13,12 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Build and publish in parallel: linux/386, linux/amd64, linux/arm64, windows/386, windows/amd64, darwin/amd64, darwin/arm64
-        goos: [linux, windows, darwin]
+        # Build and publish in parallel: linux/386, linux/amd64, linux/arm64, windows/386, windows/amd64.
+        # darwin is built by the darwin-cgo job below (needs cgo for the macOS Keychain backend).
+        goos: [linux, windows]
         goarch: ["386", amd64, arm64]
         exclude:
-          - goarch: "386"
-            goos: darwin
           - goarch: arm64
             goos: windows
     steps:
@@ -50,3 +49,62 @@ jobs:
             -X github.com/shapedthought/owlctl/cmd.version=${{ github.ref_name }}
             -X github.com/shapedthought/owlctl/cmd.commit=${{ github.sha }}
             -X github.com/shapedthought/owlctl/cmd.date=${{ github.event.release.created_at }}
+
+  # darwin binaries need CGO_ENABLED=1 so the macOS Keychain backend is compiled in
+  # (follow-up to #214/#216). go-release-action is a Docker action and cannot run on
+  # macOS, so this job reproduces its packaging exactly: owlctl-darwin-<arch>.tar.gz
+  # containing owlctl, LICENSE and README.md at the top level, plus a .sha256 file
+  # holding only the hex digest, uploaded to the same release with overwrite.
+  darwin-cgo:
+    name: Release Go Binary (darwin, cgo)
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build
+        env:
+          CGO_ENABLED: '1'
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          DATE: ${{ github.event.release.created_at }}
+        run: |
+          set -euo pipefail
+          # macos-latest is arm64; amd64 is cross-compiled with clang's -arch flag.
+          if [ "$GOARCH" = "amd64" ]; then export CC="clang -arch x86_64"; else export CC="clang -arch arm64"; fi
+          mkdir -p build-artifacts
+          go build -o build-artifacts/owlctl \
+            -ldflags "-X github.com/shapedthought/owlctl/cmd.version=${VERSION} -X github.com/shapedthought/owlctl/cmd.commit=${COMMIT} -X github.com/shapedthought/owlctl/cmd.date=${DATE}" \
+            ./
+          go version -m build-artifacts/owlctl | grep -E 'CGO_ENABLED=1|GOARCH='
+          go version -m build-artifacts/owlctl | grep -q 'CGO_ENABLED=1'
+          file build-artifacts/owlctl
+          cp LICENSE README.md build-artifacts/
+
+      - name: Package
+        env:
+          ASSET: owlctl-darwin-${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          cd build-artifacts
+          tar cvfz "../${ASSET}.tar.gz" *
+          cd ..
+          shasum -a 256 "${ASSET}.tar.gz" | cut -d ' ' -f 1 > "${ASSET}.tar.gz.sha256"
+          cat "${ASSET}.tar.gz.sha256"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET: owlctl-darwin-${{ matrix.goarch }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" "${ASSET}.tar.gz" "${ASSET}.tar.gz.sha256" --clobber --repo "${{ github.repository }}"
