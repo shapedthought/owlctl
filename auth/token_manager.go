@@ -36,7 +36,17 @@ type TokenManager struct {
 	timeout  time.Duration // 0 = no timeout
 	timedOut bool
 	hintOnce sync.Once
+	// degraded is a short reason when "auto" had to give up on storage (empty
+	// when storage works or was disabled explicitly with OWLCTL_KEYRING=none).
+	degraded string
 }
+
+// Backend returns the OWLCTL_KEYRING-style name of the active backend.
+func (tm *TokenManager) Backend() string { return tm.backend }
+
+// Degraded returns why token storage was silently disabled, or "" when it was
+// not (storage works, or the user chose OWLCTL_KEYRING=none).
+func (tm *TokenManager) Degraded() string { return tm.degraded }
 
 // TokenInfo holds the stored session: the access token, the single-use refresh
 // token and the server they were issued by. The password is never stored.

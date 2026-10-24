@@ -73,30 +73,75 @@ func NewTokenManager(debug bool) (*TokenManager, error) {
 
 			return "", errors.New("OWLCTL_FILE_KEY environment variable required for file keyring in non-interactive mode")
 		},
-		AllowedBackends: []keyring.BackendType{choice.backend},
 	}
 
+	// Linux "auto" picked Secret Service: check it is reachable before opening it,
+	// so a stale or missing bus fails in ~2s instead of hanging (and never starts
+	// a dbus-daemon). An explicitly requested backend errors instead.
+	if choice.backend == keyring.SecretServiceBackend && kenv.secretServiceProbe != nil {
+		if perr := kenv.secretServiceProbe(); perr != nil {
+			if !choice.auto {
+				return nil, fmt.Errorf("failed to open %s keyring: %w", choice.name, perr)
+			}
+			if debug {
+				fmt.Fprintf(os.Stderr, "DEBUG: %v\n", perr)
+			}
+			return fallBackFromSecretService(kenv, cfg, debug, "Secret Service unavailable")
+		}
+	}
+
+	tm, err := openWithChoice(kenv, cfg, choice, debug)
+	if err != nil {
+		if choice.auto && choice.backend == keyring.SecretServiceBackend {
+			return fallBackFromSecretService(kenv, cfg, debug, "Secret Service did not respond")
+		}
+		if choice.auto {
+			if debug {
+				fmt.Fprintf(os.Stderr, "DEBUG: %s keyring unavailable (%v); token storage disabled\n", choice.name, err)
+			}
+			return &TokenManager{debug: debug, backend: keyringNone, degraded: backendLabel(choice.name) + " unavailable"}, nil
+		}
+		return nil, fmt.Errorf("failed to open %s keyring: %w", choice.name, err)
+	}
+	if debug {
+		fmt.Fprintf(os.Stderr, "DEBUG: Token storage backend: %s\n", choice.name)
+	}
+	return tm, nil
+}
+
+// openWithChoice opens the chosen backend and wraps it in a TokenManager.
+func openWithChoice(kenv keyringEnv, cfg keyring.Config, choice keyringChoice, debug bool) (*TokenManager, error) {
+	cfg.AllowedBackends = []keyring.BackendType{choice.backend}
 	tm := &TokenManager{debug: debug, backend: choice.name, timeout: keyringTimeout(kenv.interactive || waitsOnPrompt(choice.backend))}
 	if choice.backend == keyring.FileBackend {
 		// The file backend may legitimately wait on the user typing a passphrase.
 		tm.timeout = 0
 	}
-
 	kr, err := tm.openKeyring(cfg)
 	if err != nil {
-		if choice.auto {
-			if debug {
-				fmt.Fprintf(os.Stderr, "DEBUG: %s keyring unavailable (%v); token storage disabled\n", choice.name, err)
-			}
-			return &TokenManager{debug: debug, backend: keyringNone}, nil
-		}
-		return nil, fmt.Errorf("failed to open %s keyring: %w", choice.name, err)
+		return nil, err
 	}
 	tm.keyring = kr
-	if debug {
-		fmt.Fprintf(os.Stderr, "DEBUG: Token storage backend: %s\n", choice.name)
-	}
 	return tm, nil
+}
+
+// fallBackFromSecretService handles a Linux "auto" Secret Service that is
+// unavailable: use the file keyring when it can work unattended, else print one
+// message and disable storage.
+func fallBackFromSecretService(kenv keyringEnv, cfg keyring.Config, debug bool, reason string) (*TokenManager, error) {
+	if fb, ok := fileFallback(kenv); ok {
+		tm, err := openWithChoice(kenv, cfg, fb, debug)
+		if err == nil {
+			if debug {
+				fmt.Fprintf(os.Stderr, "DEBUG: %s; using the file keyring\n", reason)
+			}
+			return tm, nil
+		}
+		reason = "file keyring unavailable"
+	} else {
+		fmt.Fprintln(os.Stderr, fileFallbackMessage)
+	}
+	return &TokenManager{debug: debug, backend: keyringNone, degraded: reason}, nil
 }
 
 // openKeyring opens the backend, bounded by the keyring timeout so a hung
@@ -137,7 +182,11 @@ func (tm *TokenManager) printTimeoutHint() {
 			fmt.Fprintf(os.Stderr, "owlctl: keyring did not respond within %s; a macOS Keychain prompt may be waiting for your answer (look for a dialog, possibly behind other windows). Continuing without stored tokens. Choose \"Always Allow\" in the prompt, run 'security unlock-keychain' if the login keychain is locked, raise OWLCTL_KEYRING_TIMEOUT, or set OWLCTL_TOKEN or OWLCTL_KEYRING=none to skip the keyring.\n", tm.timeout)
 			return
 		}
-		fmt.Fprintf(os.Stderr, "owlctl: keyring did not respond within %s; continuing without stored tokens. Set OWLCTL_TOKEN or OWLCTL_KEYRING=none to skip the keyring (OWLCTL_KEYRING_TIMEOUT adjusts the wait).\n", tm.timeout)
+		label := backendLabel(tm.backend)
+		if label == "" {
+			label = "keyring"
+		}
+		fmt.Fprintf(os.Stderr, "owlctl: %s did not respond within %s; continuing without stored tokens. Start or unlock a keyring daemon, set OWLCTL_KEYRING=file with OWLCTL_FILE_KEY to use the encrypted file keyring, set OWLCTL_KEYRING=none to skip the keyring, or raise OWLCTL_KEYRING_TIMEOUT.\n", label, tm.timeout)
 	})
 }
 

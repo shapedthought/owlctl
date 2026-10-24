@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Linux keyring handling (#221). Under `OWLCTL_KEYRING=auto`, a fast (about 2s) pre-flight check now confirms the D-Bus session bus is reachable and `org.freedesktop.secrets` is owned or activatable before the Secret Service is opened, so a stale or missing bus no longer hangs and never starts a `dbus-daemon`. If the Secret Service is unavailable or times out, `auto` falls back to the encrypted file keyring when `OWLCTL_FILE_KEY` is set (or stdin is a terminal); otherwise it prints one message naming `OWLCTL_FILE_KEY` and continues without stored tokens. Explicit `OWLCTL_KEYRING=secret-service` still errors. The keyring timeout message now names the backend and lists fixes. When `auto` could not store tokens, `owlctl login` prints `Login OK — token NOT stored (keyring unavailable: <reason>)`; explicit `OWLCTL_KEYRING=none` keeps its wording. The `OWLCTL_FILE_KEY` hint after a failed store now appears only for the file backend, with Keychain-specific advice for the macOS Keychain. macOS, Windows and explicit-backend behaviour is unchanged.
+
 - A missing `settings.json` or `profiles.json` (for example `owlctl login` or `profile --set` before `owlctl init`, or from a different directory) now prints a clear error with the absolute path checked and `owlctl init` (with `--insecure` for self-signed certificates) and `OWLCTL_SETTINGS_PATH` guidance, instead of a raw `open ./settings.json: no such file or directory`. Other read errors (permissions, invalid JSON) are reported unchanged (#213).
 
 ## [1.5.0] - 2026-10-21

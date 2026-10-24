@@ -57,6 +57,9 @@ type keyringEnv struct {
 	stdinTTY    bool
 	hasFileKey  bool
 	hasDBus     bool
+	// secretServiceProbe is a fast pre-flight check that the Secret Service is
+	// reachable (Linux). nil means "assume it is" (used by tests).
+	secretServiceProbe func() error
 	// available lists the backends compiled into this build
 	// (keyring.AvailableBackends()). nil means "all of them" (used by tests).
 	available []keyring.BackendType
@@ -86,6 +89,8 @@ func currentKeyringEnv() keyringEnv {
 		hasFileKey:  os.Getenv(FileKeyEnvVar) != "",
 		hasDBus:     os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "",
 		available:   keyring.AvailableBackends(),
+
+		secretServiceProbe: func() error { return probeSecretService() },
 	}
 }
 
@@ -165,5 +170,37 @@ func keyringTimeout(interactive bool) time.Duration {
 	return def
 }
 
+// fileFallback decides what a Linux "auto" selection does when the Secret
+// Service is unavailable (probe failed, open failed or timed out). It returns
+// the file backend when it can work without a human: OWLCTL_FILE_KEY is set or
+// stdin is a terminal for the passphrase prompt. Otherwise it returns false and
+// the caller degrades to "none" after printing fileFallbackMessage.
+func fileFallback(e keyringEnv) (keyringChoice, bool) {
+	if !e.has(keyring.FileBackend) || (!e.hasFileKey && !e.stdinTTY) {
+		return keyringChoice{name: keyringNone}, false
+	}
+	return keyringChoice{keyring.FileBackend, keyringFile, true}, true
+}
+
+const fileFallbackMessage = "owlctl: Secret Service unavailable; set OWLCTL_FILE_KEY to store tokens in the encrypted file keyring, or OWLCTL_KEYRING=none to silence this. Continuing without stored tokens."
+
+// backendLabel is the human-readable backend name used in messages.
+func backendLabel(name string) string {
+	switch name {
+	case keyringSecretService:
+		return "Secret Service (D-Bus)"
+	case keyringKeychain:
+		return "macOS Keychain"
+	case keyringWinCred:
+		return "Windows Credential Manager"
+	case keyringFile:
+		return "file keyring"
+	}
+	return name
+}
+
 var errKeyringDisabled = errors.New("token storage disabled (OWLCTL_KEYRING=none)")
 var errKeyringTimeout = errors.New("keyring operation timed out")
+
+// ErrKeyringTimeout lets callers recognise a keyring timeout.
+var ErrKeyringTimeout = errKeyringTimeout
