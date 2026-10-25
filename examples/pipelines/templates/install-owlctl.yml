@@ -1,20 +1,20 @@
 # Reusable Azure DevOps step template: download, verify and install owlctl.
 #
 # This is the ONLY place the default owlctl version is defined. Pin
-# owlctlVersion to a release tag (for example v1.5.0); use 'latest' only
+# owlctlVersion to a release tag (for example v1.5.1); use 'latest' only
 # for throwaway testing. Bump the default as part of each release's prep.
 #
 # Usage:
 #   steps:
 #     - template: templates/install-owlctl.yml        # path relative to the pipeline file
 #       parameters:
-#         owlctlVersion: v1.5.0                      # optional override
+#         owlctlVersion: v1.5.1                      # optional override
 #
 # Installs ./owlctl in the job's working directory.
 parameters:
   - name: owlctlVersion
     type: string
-    default: 'v1.5.0'
+    default: 'v1.5.1'
 
 steps:
   - bash: |
