@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -122,40 +123,64 @@ func loginWithTokenManager() {
 
 	storeErr := tm.StoreSession(keychainStorageKey, result, owlctlUrl, profile.Port)
 	if storeErr != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: Failed to store token in keychain: %v\n", storeErr)
-		fmt.Fprintln(os.Stderr, "Fix: set OWLCTL_FILE_KEY (file keyring), or set OWLCTL_KEYRING=none to skip storage")
+		fmt.Fprintf(os.Stderr, "WARNING: Failed to store token in %s: %v\n", storeFailureTarget(tm.Backend()), storeErr)
+		fmt.Fprintln(os.Stderr, storeFailureHint(tm.Backend()))
 		fmt.Fprintln(os.Stderr, "Token will need to be re-generated on next command")
 	} else if debugAuth {
 		fmt.Fprintf(os.Stderr, "DEBUG: Token stored for key '%s'\n", keychainStorageKey)
 	}
-	fmt.Println(loginStatusLine(instanceFlag, tm.StorageEnabled(), storeErr))
+	fmt.Println(loginStatusLine(instanceFlag, tm.StorageEnabled(), tm.Degraded(), storeErr))
+}
+
+// storeFailureTarget names the store in the stderr warning.
+func storeFailureTarget(backend string) string {
+	if backend == "keychain" {
+		return "keychain"
+	}
+	return "keyring"
+}
+
+// storeFailureHint gives backend-specific advice; OWLCTL_FILE_KEY is only
+// relevant to the file backend.
+func storeFailureHint(backend string) string {
+	switch backend {
+	case "file":
+		return "Fix: set OWLCTL_FILE_KEY (file keyring), or set OWLCTL_KEYRING=none to skip storage"
+	case "keychain":
+		return "Fix: choose \"Always Allow\" in the Keychain prompt, run 'security unlock-keychain' if the login keychain is locked, or set OWLCTL_KEYRING=none to skip storage"
+	}
+	return "Fix: make sure the keyring is running and unlocked, set OWLCTL_KEYRING=file with OWLCTL_FILE_KEY, or set OWLCTL_KEYRING=none to skip storage"
 }
 
 // loginStatusLine builds the stdout line. A plain "Login OK" is returned only
 // when the session was actually stored; the error is reduced to a short fixed
-// reason so no raw error text reaches stdout.
-func loginStatusLine(instance string, storageEnabled bool, storeErr error) string {
-	note := ""
+// reason so no raw error text reaches stdout. degraded is non-empty when "auto"
+// had to give up on storage, as opposed to the user choosing OWLCTL_KEYRING=none.
+func loginStatusLine(instance string, storageEnabled bool, degraded string, storeErr error) string {
+	prefix := "Login OK"
+	if instance != "" {
+		prefix = fmt.Sprintf("Login OK (instance: %s)", instance)
+	}
 	switch {
+	case !storageEnabled && degraded != "":
+		return fmt.Sprintf("%s — token NOT stored (keyring unavailable: %s)", prefix, degraded)
 	case !storageEnabled:
-		note = "token not stored: keyring disabled; set OWLCTL_KEYRING to store it"
+		if instance != "" {
+			return fmt.Sprintf("Login OK (instance: %s; token not stored: keyring disabled; set OWLCTL_KEYRING to store it)", instance)
+		}
+		return "Login OK (token not stored: keyring disabled; set OWLCTL_KEYRING to store it)"
 	case storeErr != nil:
-		note = "token not stored: " + shortStoreReason(storeErr)
+		return fmt.Sprintf("%s — token NOT stored (%s)", prefix, shortStoreReason(storeErr))
 	}
-	switch {
-	case instance != "" && note != "":
-		return fmt.Sprintf("Login OK (instance: %s; %s)", instance, note)
-	case instance != "":
-		return fmt.Sprintf("Login OK (instance: %s)", instance)
-	case note != "":
-		return fmt.Sprintf("Login OK (%s)", note)
-	}
-	return "Login OK"
+	return prefix
 }
 
 func shortStoreReason(err error) string {
 	if strings.Contains(err.Error(), "OWLCTL_FILE_KEY") {
 		return "OWLCTL_FILE_KEY not set; set it or use OWLCTL_KEYRING=none"
+	}
+	if errors.Is(err, auth.ErrKeyringTimeout) {
+		return "keyring timed out; set OWLCTL_KEYRING=none to skip storage"
 	}
 	return "keyring write failed; set OWLCTL_KEYRING=none to skip storage"
 }
