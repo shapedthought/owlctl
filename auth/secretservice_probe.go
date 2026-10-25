@@ -14,7 +14,7 @@ import (
 
 // secretServiceProbeTimeout bounds the pre-flight check so a stale or wedged
 // session bus cannot hold up the keyring decision.
-const secretServiceProbeTimeout = 2 * time.Second
+var secretServiceProbeTimeout = 2 * time.Second
 
 const secretServiceName = "org.freedesktop.secrets"
 
@@ -59,6 +59,17 @@ func queryBus(ctx context.Context, addr string) error {
 	if err != nil {
 		return fmt.Errorf("%w: session bus not reachable", errSecretServiceUnavailable)
 	}
+	// Auth and Hello take no context: closing the connection when the deadline
+	// passes is what unblocks them and releases the socket.
+	finished := make(chan struct{})
+	defer close(finished)
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-finished:
+		}
+	}()
 	defer conn.Close()
 	if err := conn.Auth(nil); err != nil {
 		return fmt.Errorf("%w: session bus authentication failed", errSecretServiceUnavailable)

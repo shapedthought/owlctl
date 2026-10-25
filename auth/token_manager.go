@@ -39,6 +39,9 @@ type TokenManager struct {
 	// degraded is a short reason when "auto" had to give up on storage (empty
 	// when storage works or was disabled explicitly with OWLCTL_KEYRING=none).
 	degraded string
+	// quietOpen suppresses the timeout hint while opening a backend that "auto"
+	// can still replace with a fallback, so only one message is printed.
+	quietOpen bool
 }
 
 // Backend returns the OWLCTL_KEYRING-style name of the active backend.

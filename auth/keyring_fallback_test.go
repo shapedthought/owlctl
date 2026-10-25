@@ -2,9 +2,14 @@ package auth
 
 import (
 	"errors"
+	"io"
+	"net"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/99designs/keyring"
 )
 
 func withKeyringEnv(t *testing.T, e keyringEnv) {
@@ -123,6 +128,94 @@ func TestTimeoutHint_NamesBackendAndFixes(t *testing.T) {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("hint missing %q: %q", want, stderr)
 		}
+	}
+}
+
+// hangSecretServiceOpen makes the Secret Service backend hang on open while
+// leaving the other backends real.
+func hangSecretServiceOpen(t *testing.T) {
+	t.Helper()
+	release := make(chan struct{})
+	orig := keyringOpen
+	keyringOpen = func(cfg keyring.Config) (keyring.Keyring, error) {
+		if len(cfg.AllowedBackends) == 1 && cfg.AllowedBackends[0] == keyring.SecretServiceBackend {
+			<-release
+			return nil, errors.New("released")
+		}
+		return orig(cfg)
+	}
+	t.Cleanup(func() { keyringOpen = orig; close(release) })
+	t.Setenv(KeyringTimeoutEnvVar, "50ms")
+}
+
+func TestNewTokenManager_SecretServiceTimeoutFallsBackWithoutMisleadingHint(t *testing.T) {
+	hangSecretServiceOpen(t)
+	t.Setenv(FileKeyEnvVar, "test-passphrase")
+	withKeyringEnv(t, keyringEnv{goos: "linux", hasDBus: true, hasFileKey: true,
+		secretServiceProbe: func() error { return nil }})
+	var tm *TokenManager
+	var err error
+	stderr := captureStderr(t, func() { tm, err = NewTokenManager(false) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tm.Backend() != keyringFile || !tm.StorageEnabled() || tm.Degraded() != "" {
+		t.Fatalf("backend=%q enabled=%v degraded=%q, want file storage", tm.Backend(), tm.StorageEnabled(), tm.Degraded())
+	}
+	if strings.Contains(stderr, "continuing without stored tokens") || strings.Contains(stderr, "did not respond") {
+		t.Errorf("timeout hint printed although the file keyring took over: %q", stderr)
+	}
+}
+
+func TestNewTokenManager_SecretServiceTimeoutNoFallbackPrintsOneMessage(t *testing.T) {
+	hangSecretServiceOpen(t)
+	withKeyringEnv(t, keyringEnv{goos: "linux", hasDBus: true,
+		secretServiceProbe: func() error { return nil }})
+	var tm *TokenManager
+	var err error
+	stderr := captureStderr(t, func() { tm, err = NewTokenManager(false) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tm.StorageEnabled() || tm.Degraded() == "" {
+		t.Fatalf("want degraded none, got enabled=%v degraded=%q", tm.StorageEnabled(), tm.Degraded())
+	}
+	if strings.Count(stderr, "\n") != 1 || !strings.Contains(stderr, "OWLCTL_FILE_KEY") {
+		t.Errorf("want exactly one fallback message, got %q", stderr)
+	}
+}
+
+func TestDefaultProbe_ClosesConnectionOnTimeout(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "bus")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Skipf("cannot listen on a unix socket: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	closed := make(chan struct{})
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		// Never answer the auth handshake; Read returns only once the client closes.
+		_, _ = io.Copy(io.Discard, c)
+		close(closed)
+	}()
+
+	orig := secretServiceProbeTimeout
+	secretServiceProbeTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { secretServiceProbeTimeout = orig })
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+sock)
+
+	if err := defaultProbeSecretService(); !errors.Is(err, errSecretServiceUnavailable) {
+		t.Fatalf("err = %v", err)
+	}
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe connection was left open after the timeout")
 	}
 }
 

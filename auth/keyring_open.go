@@ -117,7 +117,11 @@ func openWithChoice(kenv keyringEnv, cfg keyring.Config, choice keyringChoice, d
 		// The file backend may legitimately wait on the user typing a passphrase.
 		tm.timeout = 0
 	}
+	// A Linux "auto" Secret Service that times out is replaced by a fallback
+	// (or one explanatory message), so the generic hint would mislead.
+	tm.quietOpen = choice.auto && choice.backend == keyring.SecretServiceBackend
 	kr, err := tm.openKeyring(cfg)
+	tm.quietOpen = false
 	if err != nil {
 		return nil, err
 	}
@@ -144,11 +148,14 @@ func fallBackFromSecretService(kenv keyringEnv, cfg keyring.Config, debug bool, 
 	return &TokenManager{debug: debug, backend: keyringNone, degraded: reason}, nil
 }
 
+// keyringOpen is swapped in tests.
+var keyringOpen = keyring.Open
+
 // openKeyring opens the backend, bounded by the keyring timeout so a hung
 // D-Bus session or Keychain cannot block forever.
 func (tm *TokenManager) openKeyring(cfg keyring.Config) (keyring.Keyring, error) {
 	if tm.timeout <= 0 {
-		return keyring.Open(cfg)
+		return keyringOpen(cfg)
 	}
 	type result struct {
 		kr  keyring.Keyring
@@ -156,14 +163,16 @@ func (tm *TokenManager) openKeyring(cfg keyring.Config) (keyring.Keyring, error)
 	}
 	done := make(chan result, 1)
 	go func() {
-		kr, err := keyring.Open(cfg)
+		kr, err := keyringOpen(cfg)
 		done <- result{kr, err}
 	}()
 	select {
 	case r := <-done:
 		return r.kr, r.err
 	case <-time.After(tm.timeout):
-		tm.printTimeoutHint()
+		if !tm.quietOpen {
+			tm.printTimeoutHint()
+		}
 		return nil, errKeyringTimeout
 	}
 }

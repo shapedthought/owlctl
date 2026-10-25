@@ -33,3 +33,7 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/text v0.33.0 // indirect
 )
+
+// Local fork: upstream connects to the D-Bus session bus from init() (leaks a
+// dbus-daemon, hangs on an unreachable address). See third_party/keyring/README.md.
+replace github.com/99designs/keyring => ./third_party/keyring
